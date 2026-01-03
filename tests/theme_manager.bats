@@ -144,6 +144,22 @@ SCRIPT
   [[ "$output" == *"theme symlink is broken"* ]]
 }
 
+@test "current errors when no theme is set" {
+  run "${BIN}" current
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"current theme not set"* ]]
+}
+
+@test "browse errors when fzf is missing" {
+  if command -v fzf >/dev/null 2>&1; then
+    skip "fzf is installed"
+  fi
+
+  run /bin/bash -c "/bin/bash '${BIN}' browse 2>&1"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"fzf is required"* ]]
+}
+
 @test "print-config shows resolved values" {
   run "${BIN}" print-config
   [ "$status" -eq 0 ]
@@ -199,6 +215,14 @@ EOF
   [[ "$output" == *"ignoring unknown config key: UNKNOWN_KEY"* ]]
 }
 
+@test "set rejects empty --waybar name" {
+  mkdir -p "${HOME}/.config/omarchy/themes/theme-a"
+
+  run "${BIN}" set theme-a --waybar=
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"--waybar requires a name"* ]]
+}
+
 @test "CLI flags override config defaults" {
   mkdir -p "${HOME}/.config/theme-manager"
   cat > "${HOME}/.config/theme-manager/config" <<EOF
@@ -219,4 +243,34 @@ EOF
   [ "$status" -eq 0 ]
   [ -f "${HOME}/.config/waybar/config.jsonc" ]
   [[ "$(cat "${HOME}/.config/waybar/config.jsonc")" == "a" ]]
+}
+
+@test "update warns when no git themes exist" {
+  mkdir -p "${HOME}/.config/omarchy/themes/theme-a"
+
+  run "${BIN}" update
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"no git-based themes found"* ]]
+}
+
+@test "set -w <name> applies shared Waybar theme" {
+  mkdir -p "${HOME}/.config/omarchy/themes/theme-a"
+  mkdir -p "${HOME}/.config/waybar/themes/shared"
+  echo "b" > "${HOME}/.config/waybar/themes/shared/config.jsonc"
+  echo "b" > "${HOME}/.config/waybar/themes/shared/style.css"
+
+  export THEME_MANAGER_SKIP_APPS=
+  run "${BIN}" set theme-a -w shared
+  [ "$status" -eq 0 ]
+  [ -f "${HOME}/.config/waybar/config.jsonc" ]
+  [[ "$(cat "${HOME}/.config/waybar/config.jsonc")" == "b" ]]
+}
+
+@test "remove refuses to delete the only theme" {
+  mkdir -p "${HOME}/.config/omarchy/themes/alpha"
+  ln -sfn "${HOME}/.config/omarchy/themes/alpha" "${HOME}/.config/omarchy/current/theme"
+
+  run "${BIN}" remove alpha
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"cannot remove the only theme"* ]]
 }

@@ -569,6 +569,10 @@ parse_waybar_args() {
       --waybar=*)
         WAYBAR_MODE="named"
         WAYBAR_NAME="${1#--waybar=}"
+        if [[ -z "${WAYBAR_NAME}" ]]; then
+          echo "theme-manager: --waybar requires a name when used with =" >&2
+          return 2
+        fi
         shift
         ;;
       *)
@@ -645,7 +649,7 @@ cmd_browse() {
 
   local preview_cmd=""
   if [[ ${preview_supported} -eq 1 ]]; then
-    preview_cmd="$(cat <<'PREVIEW_CMD'
+  preview_cmd="$(cat <<'PREVIEW_CMD'
 preview={1}
 preview="${preview#\'}"
 preview="${preview%\'}"
@@ -655,7 +659,7 @@ if [ ! -f "$preview" ]; then
   preview="${preview_dir}/waybar-theme/preview.png"
 fi
 if [ ! -f "$preview" ]; then
-  preview="$(find "${preview_dir}/backgrounds" -maxdepth 1 -type f -name "*.png" -o -name "*.jpg" -o -name "*.jpeg" -o -name "*.webp" 2>/dev/null | sort | head -n 1)"
+  preview="$(find "${preview_dir}/backgrounds" -maxdepth 1 -type f \( -name "*.png" -o -name "*.jpg" -o -name "*.jpeg" -o -name "*.webp" \) 2>/dev/null | sort | head -n 1)"
 fi
 if [ -f "$preview" ]; then
   if command -v chafa >/dev/null 2>&1; then
