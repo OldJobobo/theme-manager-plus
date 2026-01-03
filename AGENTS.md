@@ -17,6 +17,7 @@ This project does not replace Omarchy theming. It provides an alternative manage
 - `./bin/theme-manager browse`: interactive theme + Waybar picker (requires `fzf`).
 - `./bin/theme-manager current`: print the current theme.
 - `./bin/theme-manager bg-next`: cycle the background within the current theme.
+- `./bin/theme-manager print-config`: show resolved config values.
 - `./bin/theme-manager install <git-url>`: clone and activate a theme.
 - `./bin/theme-manager update`: pull updates for git-based themes.
 - `./bin/theme-manager remove [theme]`: remove a theme (prompts if omitted).

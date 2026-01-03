@@ -9,16 +9,22 @@ setup() {
 
   export PATH="${BATS_TEST_TMPDIR}/bin:${PATH}"
   mkdir -p "${BATS_TEST_TMPDIR}/bin"
+
+  export PWD="${BATS_TEST_TMPDIR}/project"
+  mkdir -p "${PWD}"
+  cd "${PWD}"
+
+  export BIN="${BATS_TEST_DIRNAME}/../bin/theme-manager"
 }
 
 @test "prints usage when no args" {
-  run bin/theme-manager
+  run "${BIN}"
   [ "$status" -eq 2 ]
   [[ "$output" == *"Usage: theme-manager"* ]]
 }
 
 @test "rejects unknown command" {
-  run bin/theme-manager nope
+  run "${BIN}" nope
   [ "$status" -eq 2 ]
   [[ "$output" == *"unknown command"* ]]
 }
@@ -27,7 +33,7 @@ setup() {
   mkdir -p "${HOME}/.config/omarchy/themes/tokyo-night"
   mkdir -p "${HOME}/.config/omarchy/themes/gruvbox"
 
-  run bin/theme-manager list
+  run "${BIN}" list
   [ "$status" -eq 0 ]
   [[ "$output" == *"Tokyo Night"* ]]
   [[ "$output" == *"Gruvbox"* ]]
@@ -36,7 +42,7 @@ setup() {
 @test "set updates current theme link" {
   mkdir -p "${HOME}/.config/omarchy/themes/tokyo-night"
 
-  run bin/theme-manager set "Tokyo Night"
+  run "${BIN}" set "Tokyo Night"
   [ "$status" -eq 0 ]
   [ -L "${HOME}/.config/omarchy/current/theme" ]
   [[ "$(readlink "${HOME}/.config/omarchy/current/theme")" == *"tokyo-night" ]]
@@ -46,7 +52,7 @@ setup() {
   mkdir -p "${HOME}/.config/omarchy/themes/tokyo-night"
   ln -sfn "${HOME}/.config/omarchy/themes/tokyo-night" "${HOME}/.config/omarchy/current/theme"
 
-  run bin/theme-manager current
+  run "${BIN}" current
   [ "$status" -eq 0 ]
   [ "$output" = "Tokyo Night" ]
 }
@@ -56,10 +62,10 @@ setup() {
   mkdir -p "${HOME}/.config/omarchy/themes/bravo"
   ln -sfn "${HOME}/.config/omarchy/themes/alpha" "${HOME}/.config/omarchy/current/theme"
 
-  run bin/theme-manager next
+  run "${BIN}" next
   [ "$status" -eq 0 ]
 
-  run bin/theme-manager current
+  run "${BIN}" current
   [ "$status" -eq 0 ]
   [ "$output" = "Bravo" ]
 }
@@ -71,7 +77,7 @@ echo "ok" > "${BATS_TEST_TMPDIR}/bg-next-called"
 SCRIPT
   chmod +x "${BATS_TEST_TMPDIR}/bin/omarchy-theme-bg-next"
 
-  run bin/theme-manager bg-next
+  run "${BIN}" bg-next
   [ "$status" -eq 0 ]
   [ -f "${BATS_TEST_TMPDIR}/bg-next-called" ]
 }
@@ -88,11 +94,11 @@ SCRIPT
   git -C "${repo_dir}" add README.md
   git -C "${repo_dir}" -c user.email="test@example.com" -c user.name="Test" commit -m "init" -q
 
-  run bin/theme-manager install "${repo_dir}"
+  run "${BIN}" install "${repo_dir}"
   [ "$status" -eq 0 ]
   [ -d "${HOME}/.config/omarchy/themes/nord" ]
 
-  run bin/theme-manager current
+  run "${BIN}" current
   [ "$status" -eq 0 ]
   [ "$output" = "Nord" ]
 }
@@ -102,11 +108,11 @@ SCRIPT
   mkdir -p "${HOME}/.config/omarchy/themes/bravo"
   ln -sfn "${HOME}/.config/omarchy/themes/alpha" "${HOME}/.config/omarchy/current/theme"
 
-  run bin/theme-manager remove alpha
+  run "${BIN}" remove alpha
   [ "$status" -eq 0 ]
   [ ! -e "${HOME}/.config/omarchy/themes/alpha" ]
 
-  run bin/theme-manager current
+  run "${BIN}" current
   [ "$status" -eq 0 ]
   [ "$output" = "Bravo" ]
 }
@@ -114,7 +120,56 @@ SCRIPT
 @test "set rejects broken theme symlink" {
   ln -sfn "${HOME}/.config/omarchy/themes/missing-target" "${HOME}/.config/omarchy/themes/broken"
 
-  run bin/theme-manager set broken
+  run "${BIN}" set broken
   [ "$status" -eq 1 ]
   [[ "$output" == *"theme symlink is broken"* ]]
+}
+
+@test "print-config shows resolved values" {
+  run "${BIN}" print-config
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"THEME_ROOT_DIR="* ]]
+  [[ "$output" == *"CURRENT_THEME_LINK="* ]]
+}
+
+@test "config overrides theme root" {
+  mkdir -p "${HOME}/.config/theme-manager"
+  cat > "${HOME}/.config/theme-manager/config" <<EOF
+THEME_ROOT_DIR="${HOME}/.config/omarchy/themes-alt"
+EOF
+
+  mkdir -p "${HOME}/.config/omarchy/themes-alt/oasis"
+
+  run "${BIN}" set oasis
+  [ "$status" -eq 0 ]
+  [ -L "${HOME}/.config/omarchy/current/theme" ]
+  [[ "$(readlink "${HOME}/.config/omarchy/current/theme")" == *"/themes-alt/oasis" ]]
+}
+
+@test "local config overrides user config" {
+  mkdir -p "${HOME}/.config/theme-manager"
+  cat > "${HOME}/.config/theme-manager/config" <<EOF
+THEME_ROOT_DIR="${HOME}/.config/omarchy/themes-user"
+EOF
+  mkdir -p "${HOME}/.config/omarchy/themes-user/user-theme"
+
+  cat > "${PWD}/.theme-manager.conf" <<EOF
+THEME_ROOT_DIR="${HOME}/.config/omarchy/themes-local"
+EOF
+  mkdir -p "${HOME}/.config/omarchy/themes-local/local-theme"
+
+  run "${BIN}" set local-theme
+  [ "$status" -eq 0 ]
+  [[ "$(readlink "${HOME}/.config/omarchy/current/theme")" == *"/themes-local/local-theme" ]]
+}
+
+@test "unknown config keys warn" {
+  mkdir -p "${HOME}/.config/theme-manager"
+  cat > "${HOME}/.config/theme-manager/config" <<EOF
+UNKNOWN_KEY="value"
+EOF
+
+  run "${BIN}" print-config
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"ignoring unknown config key: UNKNOWN_KEY"* ]]
 }

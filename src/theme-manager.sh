@@ -12,6 +12,7 @@ Commands:
   browse                Interactive theme + waybar selection (fzf required)
   current               Print the current theme
   bg-next               Switch to the next background in the current theme
+  print-config          Show resolved configuration values
   install <git-url>     Clone and activate a theme from git
   update                Pull updates for git-based themes
   remove [theme]        Remove a theme (prompts if omitted)
@@ -302,6 +303,20 @@ apply_default_waybar() {
   if [[ "${WAYBAR_MODE}" == "named" && -z "${WAYBAR_NAME:-}" ]]; then
     WAYBAR_NAME="${DEFAULT_WAYBAR_NAME:-}"
   fi
+}
+
+print_config() {
+  cat <<EOF
+THEME_ROOT_DIR=$(theme_root_dir)
+CURRENT_THEME_LINK=$(current_theme_link)
+OMARCHY_BIN_DIR=${OMARCHY_BIN_DIR:-}
+WAYBAR_DIR=$(waybar_dir)
+WAYBAR_THEMES_DIR=$(waybar_themes_dir)
+DEFAULT_WAYBAR_MODE=${DEFAULT_WAYBAR_MODE:-}
+DEFAULT_WAYBAR_NAME=${DEFAULT_WAYBAR_NAME:-}
+QUIET_MODE_DEFAULT=${QUIET_MODE_DEFAULT:-}
+QUIET_MODE=${QUIET_MODE:-}
+EOF
 }
 
 apply_waybar_theme() {
@@ -930,6 +945,14 @@ main() {
       ;;
     bg-next)
       cmd_bg_next
+      ;;
+    print-config)
+      shift
+      if [[ $# -gt 0 ]]; then
+        echo "theme-manager: print-config takes no arguments" >&2
+        return 2
+      fi
+      print_config
       ;;
     install)
       shift
