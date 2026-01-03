@@ -9,4 +9,6 @@ SOURCE_BIN="${SCRIPT_DIR}/bin/theme-manager"
 mkdir -p "${TARGET_DIR}"
 ln -sfn "${SOURCE_BIN}" "${TARGET_LINK}"
 
+mkdir -p "${HOME}/.config/starship-themes"
+
 printf 'Linked %s -> %s\n' "${TARGET_LINK}" "${SOURCE_BIN}"

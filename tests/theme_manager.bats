@@ -274,3 +274,86 @@ EOF
   [ "$status" -eq 1 ]
   [[ "$output" == *"cannot remove the only theme"* ]]
 }
+
+@test "set applies starship preset to config" {
+  mkdir -p "${HOME}/.config/omarchy/themes/theme-a"
+  mkdir -p "${HOME}/.config/theme-manager"
+  cat > "${HOME}/.config/theme-manager/config" <<EOF
+DEFAULT_STARSHIP_MODE="preset"
+DEFAULT_STARSHIP_PRESET="tokyo-night"
+EOF
+
+  cat > "${BATS_TEST_TMPDIR}/bin/starship" <<'SCRIPT'
+#!/usr/bin/env bash
+if [[ "$1" == "preset" && "$2" == "tokyo-night" ]]; then
+  echo "preset-config"
+  exit 0
+fi
+exit 1
+SCRIPT
+  chmod +x "${BATS_TEST_TMPDIR}/bin/starship"
+
+  export THEME_MANAGER_SKIP_APPS=
+  run "${BIN}" set theme-a
+  [ "$status" -eq 0 ]
+  [ -f "${HOME}/.config/starship.toml" ]
+  [[ "$(cat "${HOME}/.config/starship.toml")" == "preset-config" ]]
+}
+
+@test "set applies starship named theme to config" {
+  mkdir -p "${HOME}/.config/omarchy/themes/theme-a"
+  mkdir -p "${HOME}/.config/theme-manager"
+  cat > "${HOME}/.config/theme-manager/config" <<EOF
+DEFAULT_STARSHIP_MODE="named"
+DEFAULT_STARSHIP_NAME="rose-pine"
+EOF
+
+  mkdir -p "${HOME}/.config/starship-themes"
+  echo "user-config" > "${HOME}/.config/starship-themes/rose-pine.toml"
+
+  export THEME_MANAGER_SKIP_APPS=
+  run "${BIN}" set theme-a
+  [ "$status" -eq 0 ]
+  [ -f "${HOME}/.config/starship.toml" ]
+  [[ "$(cat "${HOME}/.config/starship.toml")" == "user-config" ]]
+}
+
+@test "set reports missing starship preset" {
+  mkdir -p "${HOME}/.config/omarchy/themes/theme-a"
+  mkdir -p "${HOME}/.config/theme-manager"
+  cat > "${HOME}/.config/theme-manager/config" <<EOF
+DEFAULT_STARSHIP_MODE="preset"
+DEFAULT_STARSHIP_PRESET="missing"
+EOF
+
+  cat > "${BATS_TEST_TMPDIR}/bin/starship" <<'SCRIPT'
+#!/usr/bin/env bash
+exit 1
+SCRIPT
+  chmod +x "${BATS_TEST_TMPDIR}/bin/starship"
+
+  export THEME_MANAGER_SKIP_APPS=
+  run /bin/bash -c "/bin/bash '${BIN}' set theme-a 2>&1"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"failed to apply starship preset"* ]]
+}
+
+@test "set reports missing starship theme" {
+  mkdir -p "${HOME}/.config/omarchy/themes/theme-a"
+  mkdir -p "${HOME}/.config/theme-manager"
+  cat > "${HOME}/.config/theme-manager/config" <<EOF
+DEFAULT_STARSHIP_MODE="named"
+DEFAULT_STARSHIP_NAME="missing"
+EOF
+
+  export THEME_MANAGER_SKIP_APPS=
+  run /bin/bash -c "/bin/bash '${BIN}' set theme-a 2>&1"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"starship theme not found"* ]]
+}
+
+@test "install creates starship themes directory" {
+  run /bin/bash "${BATS_TEST_DIRNAME}/../install.sh"
+  [ "$status" -eq 0 ]
+  [ -d "${HOME}/.config/starship-themes" ]
+}

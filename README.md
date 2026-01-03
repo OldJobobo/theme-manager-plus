@@ -76,6 +76,19 @@ Notes:
 - If a theme has `waybar-theme/preview.png`, the browse screen shows it.
 - If there is no preview, the browser falls back to the first image in `backgrounds/`.
 
+## Starship Integration
+Theme Manager Plus can apply Starship prompt configs after a theme switch.
+
+Two sources are supported:
+- Starship presets: `starship preset <name>`
+- User themes: `~/.config/starship-themes/<name>.toml`
+
+Behavior:
+- Defaults are controlled via config (see below).
+- `browse` lets you pick a Starship preset or user theme alongside the theme selection.
+- The active config is written to `~/.config/starship.toml`.
+- `install.sh` ensures `~/.config/starship-themes/` exists for user themes.
+
 ## Omarchy Compatibility
 This tool calls Omarchy’s scripts to stay compatible. It runs:
 - `omarchy-theme-bg-next`
@@ -102,6 +115,10 @@ Keys (all optional):
 - `WAYBAR_DIR`, `WAYBAR_THEMES_DIR`
 - `DEFAULT_WAYBAR_MODE` (`auto` or `named`)
 - `DEFAULT_WAYBAR_NAME`
+- `STARSHIP_CONFIG`, `STARSHIP_THEMES_DIR`
+- `DEFAULT_STARSHIP_MODE` (`preset` or `named`)
+- `DEFAULT_STARSHIP_PRESET`
+- `DEFAULT_STARSHIP_NAME`
 - `QUIET_MODE_DEFAULT` (`1` to enable quiet mode by default)
 
 Use `./bin/theme-manager print-config` to see resolved values.

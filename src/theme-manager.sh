@@ -21,7 +21,7 @@ Commands:
 USAGE
 }
 
-VERSION="0.1.3"
+VERSION="0.1.4"
 
 theme_root_dir() {
   echo "${THEME_ROOT_DIR:-${HOME}/.config/omarchy/themes}"
@@ -40,6 +40,18 @@ waybar_themes_dir() {
     echo "${WAYBAR_THEMES_DIR}"
   else
     echo "$(waybar_dir)/themes"
+  fi
+}
+
+starship_config_path() {
+  echo "${STARSHIP_CONFIG:-${HOME}/.config/starship.toml}"
+}
+
+starship_themes_dir() {
+  if [[ -n "${STARSHIP_THEMES_DIR:-}" ]]; then
+    echo "${STARSHIP_THEMES_DIR}"
+  else
+    echo "${HOME}/.config/starship-themes"
   fi
 }
 
@@ -218,7 +230,7 @@ run_filtered() {
 
 load_config_file() {
   local path="$1"
-  local allow_keys=("THEME_ROOT_DIR" "CURRENT_THEME_LINK" "OMARCHY_BIN_DIR" "WAYBAR_DIR" "WAYBAR_THEMES_DIR" "DEFAULT_WAYBAR_MODE" "DEFAULT_WAYBAR_NAME" "QUIET_MODE_DEFAULT")
+  local allow_keys=("THEME_ROOT_DIR" "CURRENT_THEME_LINK" "OMARCHY_BIN_DIR" "WAYBAR_DIR" "WAYBAR_THEMES_DIR" "STARSHIP_CONFIG" "STARSHIP_THEMES_DIR" "DEFAULT_WAYBAR_MODE" "DEFAULT_WAYBAR_NAME" "DEFAULT_STARSHIP_MODE" "DEFAULT_STARSHIP_PRESET" "DEFAULT_STARSHIP_NAME" "QUIET_MODE_DEFAULT")
 
   [[ -f "${path}" ]] || return 0
 
@@ -266,7 +278,7 @@ load_config_file() {
 
 apply_env_overrides() {
   local key
-  for key in THEME_ROOT_DIR CURRENT_THEME_LINK OMARCHY_BIN_DIR WAYBAR_DIR WAYBAR_THEMES_DIR DEFAULT_WAYBAR_MODE DEFAULT_WAYBAR_NAME QUIET_MODE_DEFAULT QUIET_MODE; do
+  for key in THEME_ROOT_DIR CURRENT_THEME_LINK OMARCHY_BIN_DIR WAYBAR_DIR WAYBAR_THEMES_DIR STARSHIP_CONFIG STARSHIP_THEMES_DIR DEFAULT_WAYBAR_MODE DEFAULT_WAYBAR_NAME DEFAULT_STARSHIP_MODE DEFAULT_STARSHIP_PRESET DEFAULT_STARSHIP_NAME QUIET_MODE_DEFAULT QUIET_MODE; do
     if [[ -n "${!key-}" ]]; then
       printf -v "${key}" '%s' "${!key}"
     fi
@@ -308,6 +320,23 @@ apply_default_waybar() {
   fi
 }
 
+apply_default_starship() {
+  if [[ -n "${STARSHIP_MODE:-}" ]]; then
+    return 0
+  fi
+  if [[ -z "${DEFAULT_STARSHIP_MODE:-}" ]]; then
+    return 0
+  fi
+
+  STARSHIP_MODE="${DEFAULT_STARSHIP_MODE}"
+  if [[ "${STARSHIP_MODE}" == "preset" && -z "${STARSHIP_PRESET:-}" ]]; then
+    STARSHIP_PRESET="${DEFAULT_STARSHIP_PRESET:-}"
+  fi
+  if [[ "${STARSHIP_MODE}" == "named" && -z "${STARSHIP_NAME:-}" ]]; then
+    STARSHIP_NAME="${DEFAULT_STARSHIP_NAME:-}"
+  fi
+}
+
 print_config() {
   cat <<EOF
 THEME_ROOT_DIR=$(theme_root_dir)
@@ -315,8 +344,13 @@ CURRENT_THEME_LINK=$(current_theme_link)
 OMARCHY_BIN_DIR=${OMARCHY_BIN_DIR:-}
 WAYBAR_DIR=$(waybar_dir)
 WAYBAR_THEMES_DIR=$(waybar_themes_dir)
+STARSHIP_CONFIG=$(starship_config_path)
+STARSHIP_THEMES_DIR=$(starship_themes_dir)
 DEFAULT_WAYBAR_MODE=${DEFAULT_WAYBAR_MODE:-}
 DEFAULT_WAYBAR_NAME=${DEFAULT_WAYBAR_NAME:-}
+DEFAULT_STARSHIP_MODE=${DEFAULT_STARSHIP_MODE:-}
+DEFAULT_STARSHIP_PRESET=${DEFAULT_STARSHIP_PRESET:-}
+DEFAULT_STARSHIP_NAME=${DEFAULT_STARSHIP_NAME:-}
 QUIET_MODE_DEFAULT=${QUIET_MODE_DEFAULT:-}
 QUIET_MODE=${QUIET_MODE:-}
 EOF
@@ -373,6 +407,95 @@ apply_waybar_theme() {
     return 1
   fi
   run_filtered omarchy-restart-waybar "waybar"
+}
+
+list_starship_presets() {
+  if ! command -v starship >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if starship preset --list >/dev/null 2>&1; then
+    starship preset --list 2>/dev/null
+    return 0
+  fi
+
+  starship preset -l 2>/dev/null || true
+}
+
+list_starship_themes() {
+  local themes_dir
+  themes_dir="$(starship_themes_dir)"
+  if [[ ! -d "${themes_dir}" ]]; then
+    return 0
+  fi
+
+  local file
+  for file in "${themes_dir}"/*.toml; do
+    [[ -f "${file}" ]] || continue
+    basename "${file}" .toml
+  done
+}
+
+apply_starship() {
+  if skip_apps; then
+    return 0
+  fi
+
+  if [[ -z "${STARSHIP_MODE:-}" ]]; then
+    return 0
+  fi
+
+  local config_path
+  config_path="$(starship_config_path)"
+  mkdir -p "$(dirname "${config_path}")"
+
+  local themes_dir
+  themes_dir="$(starship_themes_dir)"
+  mkdir -p "${themes_dir}"
+
+  case "${STARSHIP_MODE}" in
+    preset)
+      if [[ -z "${STARSHIP_PRESET:-}" ]]; then
+        echo "theme-manager: starship preset name is required" >&2
+        return 1
+      fi
+      if ! command -v starship >/dev/null 2>&1; then
+        echo "theme-manager: starship not found in PATH" >&2
+        return 1
+      fi
+      if [[ -z "${QUIET_MODE:-}" ]]; then
+        echo "theme-manager: applying starship preset ${STARSHIP_PRESET}"
+      fi
+      if ! starship preset "${STARSHIP_PRESET}" > "${config_path}"; then
+        echo "theme-manager: failed to apply starship preset ${STARSHIP_PRESET}" >&2
+        return 1
+      fi
+      ;;
+    named)
+      if [[ -z "${STARSHIP_NAME:-}" ]]; then
+        echo "theme-manager: starship theme name is required" >&2
+        return 1
+      fi
+      local theme_path="${themes_dir}/${STARSHIP_NAME}"
+      if [[ "${theme_path}" != *.toml ]]; then
+        theme_path="${theme_path}.toml"
+      fi
+      if [[ ! -f "${theme_path}" ]]; then
+        echo "theme-manager: starship theme not found: ${theme_path}" >&2
+        return 1
+      fi
+      if [[ -z "${QUIET_MODE:-}" ]]; then
+        echo "theme-manager: applying starship theme ${theme_path}"
+      fi
+      if ! cp -p -f "${theme_path}" "${config_path}"; then
+        echo "theme-manager: failed to copy starship theme to ${config_path}" >&2
+        return 1
+      fi
+      ;;
+    *)
+      return 0
+      ;;
+  esac
 }
 
 reload_components() {
@@ -481,6 +604,7 @@ cmd_set() {
   fi
 
   apply_waybar_theme
+  apply_starship
 }
 
 cmd_next() {
@@ -625,6 +749,17 @@ add_unique_option() {
     fi
   done
   WAYBAR_OPTIONS+=("${option}")
+}
+
+add_unique_starship_option() {
+  local option="$1"
+  local item
+  for item in "${STARSHIP_OPTIONS[@]:-}"; do
+    if [[ "${item}" == "${option}" ]]; then
+      return 0
+    fi
+  done
+  STARSHIP_OPTIONS+=("${option}")
 }
 
 cmd_browse() {
@@ -792,6 +927,50 @@ PREVIEW_CMD
       ;;
   esac
 
+  STARSHIP_OPTIONS=()
+  add_unique_starship_option "Omarchy default"
+
+  local preset
+  while IFS= read -r preset; do
+    [[ -z "${preset}" ]] && continue
+    add_unique_starship_option "Preset: ${preset}"
+  done <<< "$(list_starship_presets)"
+
+  local theme
+  while IFS= read -r theme; do
+    [[ -z "${theme}" ]] && continue
+    add_unique_starship_option "Theme: ${theme}"
+  done <<< "$(list_starship_themes)"
+
+  if [[ ${#STARSHIP_OPTIONS[@]} -gt 1 ]]; then
+    local starship_choice
+    starship_choice="$(printf '%s\n' "${STARSHIP_OPTIONS[@]}" | fzf --prompt='Select Starship: ' --cycle --reverse --height=100% --border --border-label=" Theme Manager+ v${VERSION} " --border-label-pos=2 --padding=1 --bind 'q:abort')" || return 0
+    case "${starship_choice}" in
+      "Omarchy default")
+        STARSHIP_MODE="none"
+        STARSHIP_PRESET=""
+        STARSHIP_NAME=""
+        ;;
+      "Preset: "*)
+        STARSHIP_MODE="preset"
+        STARSHIP_PRESET="${starship_choice#Preset: }"
+        STARSHIP_NAME=""
+        ;;
+      "Theme: "*)
+        STARSHIP_MODE="named"
+        STARSHIP_NAME="${starship_choice#Theme: }"
+        STARSHIP_PRESET=""
+        ;;
+      *)
+        STARSHIP_MODE="none"
+        STARSHIP_PRESET=""
+        STARSHIP_NAME=""
+        ;;
+    esac
+  fi
+
+  apply_default_starship
+
   if ! cmd_set "${theme_id}"; then
     echo "theme-manager: browse failed applying theme: ${theme_id}" >&2
     return 1
@@ -928,6 +1107,7 @@ main() {
       shift
       parse_waybar_args "$@"
       apply_default_waybar
+      apply_default_starship
       local theme_name="${PARSED_ARGS[*]:-}"
       cmd_set "${theme_name}"
       ;;
@@ -935,6 +1115,7 @@ main() {
       shift
       parse_waybar_args "$@"
       apply_default_waybar
+      apply_default_starship
       if [[ ${#PARSED_ARGS[@]} -gt 0 ]]; then
         echo "theme-manager: unexpected arguments to next: ${PARSED_ARGS[*]}" >&2
         return 2

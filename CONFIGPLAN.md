@@ -22,6 +22,11 @@
 - [x] `WAYBAR_THEMES_DIR` (default: `~/.config/waybar/themes`)
 - [x] `DEFAULT_WAYBAR_MODE` (`auto` or `named`)
 - [x] `DEFAULT_WAYBAR_NAME` (used when mode is `named`)
+- [x] `STARSHIP_CONFIG` (default: `~/.config/starship.toml`)
+- [x] `STARSHIP_THEMES_DIR` (default: `~/.config/starship-themes`)
+- [x] `DEFAULT_STARSHIP_MODE` (`preset` or `named`)
+- [x] `DEFAULT_STARSHIP_PRESET` (used when mode is `preset`)
+- [x] `DEFAULT_STARSHIP_NAME` (used when mode is `named`)
 - [x] `QUIET_MODE_DEFAULT` (`1` or empty)
 
 ## 5) Load Order Logic

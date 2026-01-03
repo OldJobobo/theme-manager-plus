@@ -16,6 +16,12 @@ WAYBAR_DIR="$HOME/.config/waybar"
 # Waybar themes directory (named theme folders live here).
 WAYBAR_THEMES_DIR="$HOME/.config/waybar/themes"
 
+# Starship config file (active config lives here).
+STARSHIP_CONFIG="$HOME/.config/starship.toml"
+
+# Starship themes directory (named theme files live here).
+STARSHIP_THEMES_DIR="$HOME/.config/starship-themes"
+
 # Default Waybar behavior when -w/--waybar is not provided:
 # - "auto"  → use the current theme's waybar-theme/ if present
 # - "named" → use DEFAULT_WAYBAR_NAME from WAYBAR_THEMES_DIR
@@ -24,6 +30,18 @@ DEFAULT_WAYBAR_MODE="auto"
 
 # Name of a Waybar theme to use when DEFAULT_WAYBAR_MODE="named".
 DEFAULT_WAYBAR_NAME=""
+
+# Default Starship behavior when no selection is provided:
+# - "preset" → use DEFAULT_STARSHIP_PRESET via `starship preset`
+# - "named"  → use DEFAULT_STARSHIP_NAME from STARSHIP_THEMES_DIR
+# - ""       → do nothing
+DEFAULT_STARSHIP_MODE=""
+
+# Name of a Starship preset when DEFAULT_STARSHIP_MODE="preset".
+DEFAULT_STARSHIP_PRESET=""
+
+# Name of a Starship theme when DEFAULT_STARSHIP_MODE="named".
+DEFAULT_STARSHIP_NAME=""
 
 # Set to 1 to default to quiet mode (same as -q/--quiet).
 QUIET_MODE_DEFAULT=""
