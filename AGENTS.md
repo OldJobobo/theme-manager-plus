@@ -7,6 +7,8 @@
 - `CONFIGPLAN.md`: config system scope, keys, and testing checklist.
 - `src/theme-manager.sh`: defines `VERSION` and the `version` command.
 - `bin/theme-manager`: CLI entry point.
+- `extras/omarchy/theme_manager_plus.lua`: Walker/Elephant menu (kept for reference).
+- `install-omarchy-menu.sh`: installs the TUI app launcher via `omarchy-tui-install`.
 - `tests/`: Bats tests and the test runner script.
 
 ## Project Intent & Scope
@@ -24,6 +26,7 @@ This project does not replace Omarchy theming. It provides an alternative manage
 - `./bin/theme-manager install <git-url>`: clone and activate a theme.
 - `./bin/theme-manager update`: pull updates for git-based themes.
 - `./bin/theme-manager remove [theme]`: remove a theme (prompts if omitted).
+- `./install-omarchy-menu.sh`: create a Theme Manager+ launcher in Omarchy’s app list.
 - `./tests/run.sh`: run the Bats test suite (requires `bats` in PATH).
 
 ## Coding Style & Naming Conventions

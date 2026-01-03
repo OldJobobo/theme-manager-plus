@@ -109,6 +109,20 @@ Environment flags (optional):
 - `THEME_MANAGER_SKIP_APPS=1` skips app reloads and setters (fast, but not full parity).
 - `THEME_MANAGER_SKIP_HOOK=1` skips `omarchy-hook theme-set`.
 
+## Omarchy App Launcher Integration
+Theme Manager Plus integrates as a TUI app in Omarchy’s app launcher.
+
+Install the launcher:
+```
+./install-omarchy-menu.sh
+```
+
+This uses Omarchy’s TUI installer to create:
+- `~/.local/share/applications/Theme Manager+.desktop`
+
+The launcher opens a floating terminal and runs:
+`theme-manager browse -q`.
+
 ## Troubleshooting (Common)
 - “theme not found” → check spelling or `THEME_ROOT_DIR`.
 - “omarchy-* not found” → ensure Omarchy scripts are in PATH or set `OMARCHY_BIN_DIR`.

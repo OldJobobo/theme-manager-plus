@@ -2,8 +2,17 @@
 set -euo pipefail
 
 SOURCE_PATH="${BASH_SOURCE[0]}"
-if command -v readlink >/dev/null 2>&1; then
-  SOURCE_PATH="$(readlink -f "${SOURCE_PATH}")"
+if command -v realpath >/dev/null 2>&1; then
+  SOURCE_PATH="$(realpath "${SOURCE_PATH}")"
+else
+  while [[ -L "${SOURCE_PATH}" ]]; do
+    TARGET_PATH="$(readlink "${SOURCE_PATH}")"
+    if [[ "${TARGET_PATH}" != /* ]]; then
+      SOURCE_PATH="$(cd "$(dirname "${SOURCE_PATH}")" && pwd)/${TARGET_PATH}"
+    else
+      SOURCE_PATH="${TARGET_PATH}"
+    fi
+  done
 fi
 SCRIPT_DIR="$(cd "$(dirname "${SOURCE_PATH}")" && pwd)"
 # Source the core implementation so the CLI stays thin.

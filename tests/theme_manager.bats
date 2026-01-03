@@ -9,6 +9,25 @@ setup() {
 
   export PATH="${BATS_TEST_TMPDIR}/bin:${PATH}"
   mkdir -p "${BATS_TEST_TMPDIR}/bin"
+  for cmd in \
+    omarchy-restart-waybar \
+    omarchy-restart-terminal \
+    omarchy-restart-swayosd \
+    omarchy-theme-bg-next \
+    omarchy-theme-set-gnome \
+    omarchy-theme-set-browser \
+    omarchy-theme-set-vscode \
+    omarchy-theme-set-cursor \
+    omarchy-theme-set-obsidian \
+    hyprctl \
+    makoctl \
+    pkill; do
+    cat > "${BATS_TEST_TMPDIR}/bin/${cmd}" <<'SCRIPT'
+#!/usr/bin/env bash
+exit 0
+SCRIPT
+    chmod +x "${BATS_TEST_TMPDIR}/bin/${cmd}"
+  done
 
   export PWD="${BATS_TEST_TMPDIR}/project"
   mkdir -p "${PWD}"
