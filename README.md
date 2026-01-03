@@ -130,6 +130,10 @@ Add a Hyprland bind to open the launcher directly:
 ```
 bindd = SUPER SHIFT, R, Theme Manager+, exec, gtk-launch "Theme Manager+"
 ```
+After saving, reload Hyprland:
+```
+hyprctl reload
+```
 
 ## Troubleshooting (Common)
 - “theme not found” → check spelling or `THEME_ROOT_DIR`.

@@ -683,9 +683,9 @@ PREVIEW_CMD
     else
       preview_bind='q:abort,esc:abort'
     fi
-    theme_choice="$(printf '%s\n' "${themes}" | while IFS= read -r name; do printf '%s\t%s\n' "${themes_dir}/${name}" "$(title_case_theme "${name}")"; done | fzf --prompt='Select theme: ' --cycle --reverse --height=100% --preview "${preview_cmd}" --preview-window=right,60% --with-nth=2 --delimiter=$'\t' --bind "${preview_bind}")" || return 0
+    theme_choice="$(printf '%s\n' "${themes}" | while IFS= read -r name; do printf '%s\t%s\n' "${themes_dir}/${name}" "$(title_case_theme "${name}")"; done | fzf --prompt='Select theme: ' --cycle --reverse --height=100% --border --border-label=" Theme Manager+ v${VERSION} " --border-label-pos=2 --padding=1 --preview "${preview_cmd}" --preview-window=right,60% --preview-border=rounded --with-nth=2 --delimiter=$'\t' --bind "${preview_bind}")" || return 0
   else
-    theme_choice="$(printf '%s\n' "${themes}" | while IFS= read -r name; do printf '%s\t%s\n' "${themes_dir}/${name}" "$(title_case_theme "${name}")"; done | fzf --prompt='Select theme: ' --cycle --reverse --height=100% --with-nth=2 --delimiter=$'\t' --bind 'q:abort')" || return 0
+    theme_choice="$(printf '%s\n' "${themes}" | while IFS= read -r name; do printf '%s\t%s\n' "${themes_dir}/${name}" "$(title_case_theme "${name}")"; done | fzf --prompt='Select theme: ' --cycle --reverse --height=100% --border --border-label=" Theme Manager+ v${VERSION} " --border-label-pos=2 --padding=1 --with-nth=2 --delimiter=$'\t' --bind 'q:abort')" || return 0
   fi
 
   local theme_path="${theme_choice%%$'\t'*}"
@@ -763,10 +763,10 @@ PREVIEW_CMD
             fi
             ;;
         esac
-      done | fzf --prompt='Select Waybar: ' --cycle --reverse --height=100% --preview "${waybar_preview_cmd}" --preview-window=right,60% --with-nth=2 --delimiter=$'\t' --bind 'q:abort'
+      done | fzf --prompt='Select Waybar: ' --cycle --reverse --height=100% --border --border-label=" Theme Manager+ v${VERSION} " --border-label-pos=2 --padding=1 --preview "${waybar_preview_cmd}" --preview-window=right,60% --preview-border=rounded --with-nth=2 --delimiter=$'\t' --bind 'q:abort'
     )" || return 0
   else
-    waybar_choice="$(printf '%s\n' "${WAYBAR_OPTIONS[@]}" | fzf --prompt='Select Waybar: ' --cycle --reverse --height=100% --bind 'q:abort')" || return 0
+    waybar_choice="$(printf '%s\n' "${WAYBAR_OPTIONS[@]}" | fzf --prompt='Select Waybar: ' --cycle --reverse --height=100% --border --border-label=" Theme Manager+ v${VERSION} " --border-label-pos=2 --padding=1 --bind 'q:abort')" || return 0
   fi
 
   local waybar_kind="${waybar_choice%%$'\t'*}"
