@@ -2,8 +2,11 @@
 
 ## Project Structure & Module Organization
 - `Omarchy-theme-management.md`: reference notes on Omarchy theme compatibility and required behavior.
+- `README.md`: user-focused guide (plain-English overview, commands, config, troubleshooting).
+- `DOCSPLAN.md`: documentation roadmap and writing style rules.
+- `CONFIGPLAN.md`: config system scope, keys, and testing checklist.
+- `src/theme-manager.sh`: defines `VERSION` and the `version` command.
 - `bin/theme-manager`: CLI entry point.
-- `src/theme-manager.sh`: core shell implementation and helpers.
 - `tests/`: Bats tests and the test runner script.
 
 ## Project Intent & Scope
@@ -30,10 +33,14 @@ Use `bash` with `set -euo pipefail` and keep functions small and composable. Ind
 Tests live in `tests/` and use Bats. Name files by feature, e.g., `tests/theme_manager.bats`. Keep tests hermetic; if a test needs filesystem fixtures, create them under `tests/fixtures/` and clean up within the test. Run tests via `./tests/run.sh` or directly with `bats tests`.
 
 ## Commit & Pull Request Guidelines
-This repository is not currently a Git checkout, so no commit message conventions can be inferred. If you initialize Git, use concise, present-tense messages (e.g., "add theme switcher") and include context in the body for behavior changes. For pull requests, include a brief summary, testing notes, and any relevant screenshots or terminal output.
+No commit message convention is enforced. Use concise, present-tense messages (e.g., "add theme switcher") and include context in the body for behavior changes. For pull requests, include a brief summary, testing notes, and any relevant screenshots or terminal output.
 
 ## Architecture Notes
 Follow the compatibility requirements outlined in `Omarchy-theme-management.md`. Maintain the current theme and background symlinks under `~/.config/omarchy/current/`, reload user-facing components, and trigger `omarchy-hook theme-set` after switching.
 
 ## Configuration
 Defaults can be set via `./.theme-manager.conf` or `~/.config/theme-manager/config`. Local config overrides user config; CLI flags override both.
+See `config.example` for a fully commented template.
+
+## Versioning
+Update the `VERSION` constant in `src/theme-manager.sh` when behavior changes. The CLI exposes it via `theme-manager version`.

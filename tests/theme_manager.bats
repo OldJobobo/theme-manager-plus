@@ -132,6 +132,12 @@ SCRIPT
   [[ "$output" == *"CURRENT_THEME_LINK="* ]]
 }
 
+@test "version prints a value" {
+  run "${BIN}" version
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"."* ]]
+}
+
 @test "config overrides theme root" {
   mkdir -p "${HOME}/.config/theme-manager"
   cat > "${HOME}/.config/theme-manager/config" <<EOF
@@ -172,4 +178,26 @@ EOF
   run "${BIN}" print-config
   [ "$status" -eq 0 ]
   [[ "$output" == *"ignoring unknown config key: UNKNOWN_KEY"* ]]
+}
+
+@test "CLI flags override config defaults" {
+  mkdir -p "${HOME}/.config/theme-manager"
+  cat > "${HOME}/.config/theme-manager/config" <<EOF
+DEFAULT_WAYBAR_MODE="named"
+DEFAULT_WAYBAR_NAME="shared"
+EOF
+
+  mkdir -p "${HOME}/.config/omarchy/themes/theme-a/waybar-theme"
+  echo "a" > "${HOME}/.config/omarchy/themes/theme-a/waybar-theme/config.jsonc"
+  echo "a" > "${HOME}/.config/omarchy/themes/theme-a/waybar-theme/style.css"
+
+  mkdir -p "${HOME}/.config/waybar/themes/shared"
+  echo "b" > "${HOME}/.config/waybar/themes/shared/config.jsonc"
+  echo "b" > "${HOME}/.config/waybar/themes/shared/style.css"
+
+  export THEME_MANAGER_SKIP_APPS=
+  run "${BIN}" set theme-a -w
+  [ "$status" -eq 0 ]
+  [ -f "${HOME}/.config/waybar/config.jsonc" ]
+  [[ "$(cat "${HOME}/.config/waybar/config.jsonc")" == "a" ]]
 }

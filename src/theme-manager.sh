@@ -13,12 +13,15 @@ Commands:
   current               Print the current theme
   bg-next               Switch to the next background in the current theme
   print-config          Show resolved configuration values
+  version               Show version
   install <git-url>     Clone and activate a theme from git
   update                Pull updates for git-based themes
   remove [theme]        Remove a theme (prompts if omitted)
   help                  Show this help
 USAGE
 }
+
+VERSION="0.1.0"
 
 theme_root_dir() {
   echo "${THEME_ROOT_DIR:-${HOME}/.config/omarchy/themes}"
@@ -317,6 +320,10 @@ DEFAULT_WAYBAR_NAME=${DEFAULT_WAYBAR_NAME:-}
 QUIET_MODE_DEFAULT=${QUIET_MODE_DEFAULT:-}
 QUIET_MODE=${QUIET_MODE:-}
 EOF
+}
+
+print_version() {
+  echo "${VERSION}"
 }
 
 apply_waybar_theme() {
@@ -953,6 +960,14 @@ main() {
         return 2
       fi
       print_config
+      ;;
+    version)
+      shift
+      if [[ $# -gt 0 ]]; then
+        echo "theme-manager: version takes no arguments" >&2
+        return 2
+      fi
+      print_version
       ;;
     install)
       shift
