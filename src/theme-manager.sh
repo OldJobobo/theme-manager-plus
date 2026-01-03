@@ -20,11 +20,23 @@ USAGE
 }
 
 theme_root_dir() {
-  echo "${HOME}/.config/omarchy/themes"
+  echo "${THEME_ROOT_DIR:-${HOME}/.config/omarchy/themes}"
 }
 
 current_theme_link() {
-  echo "${HOME}/.config/omarchy/current/theme"
+  echo "${CURRENT_THEME_LINK:-${HOME}/.config/omarchy/current/theme}"
+}
+
+waybar_dir() {
+  echo "${WAYBAR_DIR:-${HOME}/.config/waybar}"
+}
+
+waybar_themes_dir() {
+  if [[ -n "${WAYBAR_THEMES_DIR:-}" ]]; then
+    echo "${WAYBAR_THEMES_DIR}"
+  else
+    echo "$(waybar_dir)/themes"
+  fi
 }
 
 skip_apps() {
@@ -101,14 +113,6 @@ list_theme_entries() {
 
 sorted_theme_entries() {
   list_theme_entries | sort
-}
-
-run_if_available() {
-  local command_name="${1:-}"
-  shift || true
-  if command -v "${command_name}" >/dev/null 2>&1; then
-    "${command_name}" "$@" || true
-  fi
 }
 
 command_exists() {
@@ -208,6 +212,98 @@ run_filtered() {
   fi
 }
 
+load_config_file() {
+  local path="$1"
+  local allow_keys=("THEME_ROOT_DIR" "CURRENT_THEME_LINK" "OMARCHY_BIN_DIR" "WAYBAR_DIR" "WAYBAR_THEMES_DIR" "DEFAULT_WAYBAR_MODE" "DEFAULT_WAYBAR_NAME" "QUIET_MODE_DEFAULT")
+
+  [[ -f "${path}" ]] || return 0
+
+  local line key value
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    line="${line%%#*}"
+    line="$(printf '%s' "${line}" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')"
+    [[ -z "${line}" ]] && continue
+
+    if [[ "${line}" != *"="* ]]; then
+      continue
+    fi
+
+    key="${line%%=*}"
+    value="${line#*=}"
+    key="$(printf '%s' "${key}" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')"
+    value="$(printf '%s' "${value}" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')"
+    value="${value%\"}"
+    value="${value#\"}"
+    value="${value%\'}"
+    value="${value#\'}"
+    if [[ "${value}" == "~"* ]]; then
+      value="${value/#\~/${HOME}}"
+    fi
+    value="${value//\$\{HOME\}/${HOME}}"
+    value="${value//\$HOME/${HOME}}"
+
+    local allowed=false
+    local allowed_key
+    for allowed_key in "${allow_keys[@]}"; do
+      if [[ "${key}" == "${allowed_key}" ]]; then
+        allowed=true
+        break
+      fi
+    done
+
+    if [[ "${allowed}" != true ]]; then
+      echo "theme-manager: ignoring unknown config key: ${key}" >&2
+      continue
+    fi
+
+    printf -v "${key}" '%s' "${value}"
+  done <"${path}"
+}
+
+apply_env_overrides() {
+  local key
+  for key in THEME_ROOT_DIR CURRENT_THEME_LINK OMARCHY_BIN_DIR WAYBAR_DIR WAYBAR_THEMES_DIR DEFAULT_WAYBAR_MODE DEFAULT_WAYBAR_NAME QUIET_MODE_DEFAULT QUIET_MODE; do
+    if [[ -n "${!key-}" ]]; then
+      printf -v "${key}" '%s' "${!key}"
+    fi
+  done
+}
+
+load_config() {
+  local user_config="${HOME}/.config/theme-manager/config"
+  local local_config="${PWD}/.theme-manager.conf"
+
+  load_config_file "${user_config}"
+  load_config_file "${local_config}"
+  apply_env_overrides
+
+  if [[ -n "${OMARCHY_BIN_DIR:-}" ]]; then
+    if [[ -d "${OMARCHY_BIN_DIR}" ]]; then
+      export PATH="${OMARCHY_BIN_DIR}:${PATH}"
+    else
+      echo "theme-manager: OMARCHY_BIN_DIR not found: ${OMARCHY_BIN_DIR}" >&2
+    fi
+  fi
+
+  if [[ -z "${QUIET_MODE:-}" && -n "${QUIET_MODE_DEFAULT:-}" ]]; then
+    QUIET_MODE=1
+  fi
+}
+
+apply_default_waybar() {
+  if [[ -n "${WAYBAR_MODE:-}" ]]; then
+    return 0
+  fi
+  if [[ -z "${DEFAULT_WAYBAR_MODE:-}" ]]; then
+    return 0
+  fi
+
+  WAYBAR_MODE="${DEFAULT_WAYBAR_MODE}"
+  if [[ "${WAYBAR_MODE}" == "named" && -z "${WAYBAR_NAME:-}" ]]; then
+    WAYBAR_NAME="${DEFAULT_WAYBAR_NAME:-}"
+  fi
+}
+
 apply_waybar_theme() {
   if skip_apps; then
     return 0
@@ -222,7 +318,7 @@ apply_waybar_theme() {
     fi
     waybar_dir="${theme_dir}/waybar-theme"
   elif [[ "${WAYBAR_MODE:-}" == "named" ]]; then
-    waybar_dir="${HOME}/.config/waybar/themes/${WAYBAR_NAME}"
+    waybar_dir="$(waybar_themes_dir)/${WAYBAR_NAME}"
   else
     return 0
   fi
@@ -239,7 +335,8 @@ apply_waybar_theme() {
     return 0
   fi
 
-  local waybar_config_dir="${HOME}/.config/waybar"
+  local waybar_config_dir
+  waybar_config_dir="$(waybar_dir)"
   mkdir -p "${waybar_config_dir}"
   if [[ -z "${QUIET_MODE:-}" ]]; then
     echo "theme-manager: applying waybar config from ${config_path}"
@@ -478,7 +575,8 @@ parse_quiet_args() {
 }
 
 list_waybar_themes() {
-  local themes_dir="${HOME}/.config/waybar/themes"
+  local themes_dir
+  themes_dir="$(waybar_themes_dir)"
   if [[ ! -d "${themes_dir}" ]]; then
     return 0
   fi
@@ -516,19 +614,74 @@ cmd_browse() {
     return 1
   fi
 
-  local theme_choice
-  theme_choice="$(printf '%s\n' "${themes}" | fzf --prompt='Select theme: ' --cycle --reverse --height=50% --bind 'q:abort')" || return 0
+  local preview_supported=0
+  if command -v chafa >/dev/null 2>&1; then
+    preview_supported=1
+  elif [[ -n "${KITTY_WINDOW_ID:-}" ]] && command -v kitty >/dev/null 2>&1; then
+    preview_supported=1
+  fi
 
-  local theme_dir="${HOME}/.config/omarchy/themes/${theme_choice}"
-  if [[ ! -d "${theme_dir}" && ! -L "${theme_dir}" ]]; then
-    echo "theme-manager: selected theme missing: ${theme_dir}" >&2
+  local preview_cmd=""
+  if [[ ${preview_supported} -eq 1 ]]; then
+    preview_cmd="$(cat <<'PREVIEW_CMD'
+preview={1}
+preview="${preview#\'}"
+preview="${preview%\'}"
+preview_dir="${preview%/}"
+preview="${preview_dir}/preview.png"
+if [ ! -f "$preview" ]; then
+  preview="${preview_dir}/waybar-theme/preview.png"
+fi
+if [ ! -f "$preview" ]; then
+  preview="$(find "${preview_dir}/backgrounds" -maxdepth 1 -type f -name "*.png" -o -name "*.jpg" -o -name "*.jpeg" -o -name "*.webp" 2>/dev/null | sort | head -n 1)"
+fi
+if [ -f "$preview" ]; then
+  if command -v chafa >/dev/null 2>&1; then
+    chafa --format=symbols --size="${FZF_PREVIEW_COLUMNS}x${FZF_PREVIEW_LINES}" "$preview"
+  elif [ -n "$KITTY_WINDOW_ID" ] && command -v kitty >/dev/null 2>&1; then
+    kitty +kitten icat --clear --transfer-mode=stream --stdin=no --place "${FZF_PREVIEW_COLUMNS}x${FZF_PREVIEW_LINES}@0x0" --scale-up "$preview"
+  else
+    file "$preview"
+  fi
+else
+  echo "No preview.png or backgrounds image found."
+fi
+PREVIEW_CMD
+)"
+  fi
+
+  local themes_dir
+  themes_dir="$(theme_root_dir)"
+
+  local theme_choice
+  if [[ ${preview_supported} -eq 1 ]]; then
+    local preview_bind='q:abort'
+    if [[ -n "${KITTY_WINDOW_ID:-}" ]] && command -v kitty >/dev/null 2>&1; then
+      preview_bind='q:abort+execute-silent(kitty +kitten icat --clear >/dev/null 2>&1),esc:abort+execute-silent(kitty +kitten icat --clear >/dev/null 2>&1),enter:accept+execute-silent(kitty +kitten icat --clear >/dev/null 2>&1)'
+    else
+      preview_bind='q:abort,esc:abort'
+    fi
+    theme_choice="$(printf '%s\n' "${themes}" | while IFS= read -r name; do printf '%s\t%s\n' "${themes_dir}/${name}" "$(title_case_theme "${name}")"; done | fzf --prompt='Select theme: ' --cycle --reverse --height=100% --preview "${preview_cmd}" --preview-window=right,60% --with-nth=2 --delimiter=$'\t' --bind "${preview_bind}")" || return 0
+  else
+    theme_choice="$(printf '%s\n' "${themes}" | while IFS= read -r name; do printf '%s\t%s\n' "${themes_dir}/${name}" "$(title_case_theme "${name}")"; done | fzf --prompt='Select theme: ' --cycle --reverse --height=100% --with-nth=2 --delimiter=$'\t' --bind 'q:abort')" || return 0
+  fi
+
+  local theme_path="${theme_choice%%$'\t'*}"
+  if [[ -z "${theme_path}" ]]; then
+    return 0
+  fi
+
+  local theme_id
+  theme_id="$(basename "${theme_path}")"
+  if [[ ! -d "${theme_path}" && ! -L "${theme_path}" ]]; then
+    echo "theme-manager: selected theme missing: ${theme_path}" >&2
     return 1
   fi
 
   WAYBAR_OPTIONS=()
   add_unique_option "Omarchy default"
 
-  if [[ -f "${theme_dir}/waybar-theme/config.jsonc" && -f "${theme_dir}/waybar-theme/style.css" ]]; then
+  if [[ -f "${theme_path}/waybar-theme/config.jsonc" && -f "${theme_path}/waybar-theme/style.css" ]]; then
     add_unique_option "Use theme waybar"
   fi
 
@@ -538,26 +691,83 @@ cmd_browse() {
     add_unique_option "${waybar_theme}"
   done <<< "$(list_waybar_themes)"
 
-  local waybar_choice
-  waybar_choice="$(printf '%s\n' "${WAYBAR_OPTIONS[@]}" | fzf --prompt='Select Waybar: ' --cycle --reverse --height=50% --bind 'q:abort')" || return 0
+  local waybar_preview_cmd=""
+  if [[ ${preview_supported} -eq 1 ]]; then
+    waybar_preview_cmd="$(cat <<'PREVIEW_CMD'
+preview={3}
+preview="${preview#\'}"
+preview="${preview%\'}"
+if [ -z "$preview" ] || [ "$preview" = "-" ]; then
+  echo "No preview.png"
+  exit 0
+fi
+if [ -f "$preview" ]; then
+  if command -v chafa >/dev/null 2>&1; then
+    chafa --format=symbols --size="${FZF_PREVIEW_COLUMNS}x${FZF_PREVIEW_LINES}" "$preview"
+  elif [ -n "$KITTY_WINDOW_ID" ] && command -v kitty >/dev/null 2>&1; then
+    kitty +kitten icat --clear --transfer-mode=stream --stdin=no --place "${FZF_PREVIEW_COLUMNS}x${FZF_PREVIEW_LINES}@0x0" --scale-up "$preview"
+  else
+    file "$preview"
+  fi
+else
+  echo "No preview.png"
+fi
+PREVIEW_CMD
+)"
+  fi
 
-  case "${waybar_choice}" in
-    "Omarchy default")
+  local waybar_choice
+  if [[ ${preview_supported} -eq 1 ]]; then
+    waybar_choice="$(
+      printf '%s\n' "${WAYBAR_OPTIONS[@]}" | while IFS= read -r option; do
+        case "${option}" in
+          "Omarchy default")
+            printf '%s\t%s\t-\n' "default" "Omarchy default"
+            ;;
+          "Use theme waybar")
+            if [[ -f "${theme_path}/waybar-theme/preview.png" ]]; then
+              printf '%s\t%s\t%s\n' "theme" "Use theme waybar" "${theme_path}/waybar-theme/preview.png"
+            else
+              printf '%s\t%s\t-\n' "theme" "Use theme waybar"
+            fi
+            ;;
+          *)
+            local preview_path
+            preview_path="$(waybar_themes_dir)/${option}/preview.png"
+            if [[ -f "${preview_path}" ]]; then
+              printf '%s\t%s\t%s\n' "named" "${option}" "${preview_path}"
+            else
+              printf '%s\t%s\t-\n' "named" "${option}"
+            fi
+            ;;
+        esac
+      done | fzf --prompt='Select Waybar: ' --cycle --reverse --height=100% --preview "${waybar_preview_cmd}" --preview-window=right,60% --with-nth=2 --delimiter=$'\t' --bind 'q:abort'
+    )" || return 0
+  else
+    waybar_choice="$(printf '%s\n' "${WAYBAR_OPTIONS[@]}" | fzf --prompt='Select Waybar: ' --cycle --reverse --height=100% --bind 'q:abort')" || return 0
+  fi
+
+  local waybar_kind="${waybar_choice%%$'\t'*}"
+  local waybar_label="${waybar_choice#*$'\t'}"
+  waybar_label="${waybar_label%%$'\t'*}"
+
+  case "${waybar_kind:-${waybar_label}}" in
+    "default"|"Omarchy default")
       WAYBAR_MODE=""
       WAYBAR_NAME=""
       ;;
-    "Use theme waybar")
+    "theme"|"Use theme waybar")
       WAYBAR_MODE="auto"
       WAYBAR_NAME=""
       ;;
     *)
       WAYBAR_MODE="named"
-      WAYBAR_NAME="${waybar_choice}"
+      WAYBAR_NAME="${waybar_label:-${waybar_choice}}"
       ;;
   esac
 
-  if ! cmd_set "${theme_choice}"; then
-    echo "theme-manager: browse failed applying theme: ${theme_choice}" >&2
+  if ! cmd_set "${theme_id}"; then
+    echo "theme-manager: browse failed applying theme: ${theme_id}" >&2
     return 1
   fi
 }
@@ -682,6 +892,7 @@ cmd_remove() {
 }
 
 main() {
+  load_config
   local command="${1:-}"
   case "${command}" in
     list)
@@ -690,12 +901,14 @@ main() {
     set)
       shift
       parse_waybar_args "$@"
+      apply_default_waybar
       local theme_name="${PARSED_ARGS[*]:-}"
       cmd_set "${theme_name}"
       ;;
     next)
       shift
       parse_waybar_args "$@"
+      apply_default_waybar
       if [[ ${#PARSED_ARGS[@]} -gt 0 ]]; then
         echo "theme-manager: unexpected arguments to next: ${PARSED_ARGS[*]}" >&2
         return 2

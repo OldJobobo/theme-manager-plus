@@ -1,0 +1,29 @@
+# theme-manager config (copy to ~/.config/theme-manager/config or ./.theme-manager.conf)
+# Lines beginning with # are comments. Values are KEY=VALUE.
+
+# Root directory containing Omarchy themes.
+THEME_ROOT_DIR="$HOME/.config/omarchy/themes"
+
+# Symlink used to point to the current Omarchy theme.
+CURRENT_THEME_LINK="$HOME/.config/omarchy/current/theme"
+
+# Optional: prepend Omarchy's bin directory to PATH so omarchy-* commands resolve.
+# OMARCHY_BIN_DIR="$HOME/.local/share/omarchy/bin"
+
+# Waybar config directory (config.jsonc/style.css live here).
+WAYBAR_DIR="$HOME/.config/waybar"
+
+# Waybar themes directory (named theme folders live here).
+WAYBAR_THEMES_DIR="$HOME/.config/waybar/themes"
+
+# Default Waybar behavior when -w/--waybar is not provided:
+# - "auto"  → use the current theme's waybar-theme/ if present
+# - "named" → use DEFAULT_WAYBAR_NAME from WAYBAR_THEMES_DIR
+# - ""      → do nothing
+DEFAULT_WAYBAR_MODE="auto"
+
+# Name of a Waybar theme to use when DEFAULT_WAYBAR_MODE="named".
+DEFAULT_WAYBAR_NAME=""
+
+# Set to 1 to default to quiet mode (same as -q/--quiet).
+QUIET_MODE_DEFAULT=""

@@ -12,8 +12,9 @@ This project does not replace Omarchy theming. It provides an alternative manage
 ## Build, Test, and Development Commands
 - `./bin/theme-manager help`: show CLI usage and available commands.
 - `./bin/theme-manager list`: list available themes.
-- `./bin/theme-manager set <theme>`: switch to a theme (use `-w` to apply a Waybar theme).
+- `./bin/theme-manager set <theme>`: switch to a theme (use `-w` for Waybar, `-q` for quiet).
 - `./bin/theme-manager next`: cycle to the next theme.
+- `./bin/theme-manager browse`: interactive theme + Waybar picker (requires `fzf`).
 - `./bin/theme-manager current`: print the current theme.
 - `./bin/theme-manager bg-next`: cycle the background within the current theme.
 - `./bin/theme-manager install <git-url>`: clone and activate a theme.
@@ -33,5 +34,5 @@ This repository is not currently a Git checkout, so no commit message convention
 ## Architecture Notes
 Follow the compatibility requirements outlined in `Omarchy-theme-management.md`. Maintain the current theme and background symlinks under `~/.config/omarchy/current/`, reload user-facing components, and trigger `omarchy-hook theme-set` after switching.
 
-## Parity Gaps
-Terminal refreshes: Omarchy touches Alacritty and signals Kitty/Ghostty; we don’t yet.
+## Configuration
+Defaults can be set via `./.theme-manager.conf` or `~/.config/theme-manager/config`. Local config overrides user config; CLI flags override both.
