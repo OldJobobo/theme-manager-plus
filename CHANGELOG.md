@@ -3,7 +3,7 @@
 All notable changes to this project are documented in this file.
 
 ## Unreleased
-- _TBD_
+- Improved README flow and Starship documentation details.
 
 ## 0.1.4
 - Added validation for empty `--waybar=` usage and improved preview file selection logic.

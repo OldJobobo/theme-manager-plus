@@ -15,18 +15,20 @@ Requirements:
 - Omarchy installed on this machine.
 - Omarchy scripts available in PATH (or set `OMARCHY_BIN_DIR` in config).
 - `fzf` is optional (only needed for `browse`).
+- `starship` is optional (only needed for preset selection or applying Starship presets).
 
 Common commands:
 - `./bin/theme-manager list` — show available themes.
 - `./bin/theme-manager set <ThemeName>` — switch to a theme.
 - `./bin/theme-manager set <ThemeName> -w` — switch and apply the theme’s Waybar theme.
 - `./bin/theme-manager browse` — pick a theme and Waybar option in a full‑screen selector.
+- Starship presets or user themes can be applied via config defaults or `browse`.
 
 ## Command Reference (Short)
 - `set <theme> [-w/--waybar [name]] [-q/--quiet]`  
   Switch themes. `-w` applies Waybar (auto or named). `-q` suppresses external command output.
 - `browse`  
-  Full‑screen selector with theme previews; then a Waybar picker.
+  Full‑screen selector with theme previews; then Waybar and Starship pickers.
 - `next`, `current`, `bg-next`  
   Cycle themes, show current theme, or cycle background.
 - `install <git-url>`, `update`, `remove [theme]`  
@@ -39,14 +41,17 @@ Common commands:
 ## Command Reference (Detailed)
 **`set <ThemeName>`**  
 Switch to a theme. This updates the current theme link, runs Omarchy’s theme scripts, reloads components, and triggers the Omarchy hook.  
-Use `-w` to apply Waybar:
+Waybar:
 - `-w` (no name): use the theme’s `waybar-theme/` folder if it exists.
 - `-w <WaybarName>`: use `~/.config/waybar/themes/<WaybarName>/`.
-Use `-q` to suppress most external output.
+Starship:
+- Applies the configured preset or user theme when Starship defaults are set.
+Quiet mode:
+- `-q` suppresses most external output.
 
 **`browse`**  
 Pick a theme in a full‑screen list. If `preview.png` exists in the theme folder it will show on the right; otherwise it falls back to the first image in `backgrounds/`.  
-Then choose how Waybar should be applied (default, theme, or named).
+Then choose Waybar (default, theme, or named), then Starship (default, preset, or user theme).
 
 **`next` / `current` / `bg-next`**  
 `next` switches to the next theme in sorted order.  
@@ -61,7 +66,12 @@ Then choose how Waybar should be applied (default, theme, or named).
 **`print-config`**  
 Prints the resolved config values after applying all overrides.
 
-## Waybar Integration
+**`version`**  
+Prints the current CLI version.
+
+## Integrations
+
+### Waybar
 Two ways to apply Waybar:
 - Per-theme: `waybar-theme/config.jsonc` and `style.css` inside the theme folder.
 - Shared: `~/.config/waybar/themes/<name>/` with the same two files.
@@ -76,7 +86,7 @@ Notes:
 - If a theme has `waybar-theme/preview.png`, the browse screen shows it.
 - If there is no preview, the browser falls back to the first image in `backgrounds/`.
 
-## Starship Integration
+### Starship
 Theme Manager Plus can apply Starship prompt configs after a theme switch.
 
 Two sources are supported:
@@ -88,6 +98,7 @@ Behavior:
 - `browse` lets you pick a Starship preset or user theme alongside the theme selection.
 - The active config is written to `~/.config/starship.toml`.
 - `install.sh` ensures `~/.config/starship-themes/` exists for user themes.
+- Preset names can be listed with `starship preset --list`.
 
 ## Omarchy Compatibility
 This tool calls Omarchy’s scripts to stay compatible. It runs:
