@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Source the core implementation so the CLI stays thin.
+# shellcheck source=../src/theme-manager.sh
+source "${SCRIPT_DIR}/../src/theme-manager.sh"
+
+main "$@"
