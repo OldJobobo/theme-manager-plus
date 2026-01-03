@@ -7,7 +7,7 @@ Usage: theme-manager <command> [args]
 
 Commands:
   list                  List available themes
-  set <theme>           Switch to a theme (options: -w/--waybar [name])
+  set <theme>           Switch to a theme (options: -w/--waybar [name], -q/--quiet)
   next                  Switch to the next theme in order
   browse                Interactive theme + waybar selection (fzf required)
   current               Print the current theme
@@ -117,6 +117,9 @@ command_exists() {
 
 warn_missing_command() {
   local command_name="$1"
+  if [[ -n "${QUIET_MODE:-}" ]]; then
+    return 0
+  fi
   echo "theme-manager: ${command_name} not found in PATH" >&2
 }
 
@@ -127,6 +130,81 @@ run_or_warn() {
     "${command_name}" "$@" || true
   else
     warn_missing_command "${command_name}"
+  fi
+}
+
+run_filtered() {
+  local command_name="$1"
+  local context="$2"
+  shift 2 || true
+
+  if [[ -n "${QUIET_MODE:-}" ]]; then
+    if command_exists "${command_name}"; then
+      "${command_name}" "$@" >/dev/null 2>&1 || true
+    else
+      warn_missing_command "${command_name}"
+    fi
+    return 0
+  fi
+
+  if ! command_exists "${command_name}"; then
+    warn_missing_command "${command_name}"
+    return 0
+  fi
+
+  local tmp
+  tmp="$(mktemp)"
+  "${command_name}" "$@" >"${tmp}" 2>&1 || true
+
+  local saw_gtk_filter=0
+  local saw_wayland_warn=0
+  local saw_source_error=0
+  local saw_browser_shutdown=0
+
+  local line
+  while IFS= read -r line; do
+    case "${line}" in
+      "Usage: hyprctl "*)
+        ;;
+      "Usage: makoctl "*)
+        ;;
+      *"Gtk-WARNING"*"filter"*"valid property name"*)
+        saw_gtk_filter=1
+        ;;
+      warning:\ queue*"zwp_tablet_pad"*)
+        saw_wayland_warn=1
+        ;;
+      "Opening in existing browser session."*)
+        ;;
+      *"Unchecked runtime.lastError: The browser is shutting down."*)
+        saw_browser_shutdown=1
+        ;;
+      *"Error reading script file 'source'"*)
+        saw_source_error=1
+        ;;
+      *"Something did not go right"*)
+        echo "theme-manager: ${context} reported an error; check its config/output." >&2
+        ;;
+      [0-9][0-9][0-9][0-9]*)
+        ;;
+      *)
+        printf '%s\n' "${line}"
+        ;;
+    esac
+  done <"${tmp}"
+  rm -f "${tmp}"
+
+  if [[ ${saw_gtk_filter} -eq 1 ]]; then
+    echo "theme-manager: GTK theme uses unsupported 'filter' CSS; warning suppressed."
+  fi
+  if [[ ${saw_wayland_warn} -eq 1 ]]; then
+    echo "theme-manager: Wayland tablet pad cleanup warnings suppressed."
+  fi
+  if [[ ${saw_browser_shutdown} -eq 1 ]]; then
+    echo "theme-manager: browser extension shutdown warning suppressed."
+  fi
+  if [[ ${saw_source_error} -eq 1 ]]; then
+    echo "theme-manager: ${context} reported missing 'source' script; check your shell/theme hooks."
   fi
 }
 
@@ -163,8 +241,10 @@ apply_waybar_theme() {
 
   local waybar_config_dir="${HOME}/.config/waybar"
   mkdir -p "${waybar_config_dir}"
-  echo "theme-manager: applying waybar config from ${config_path}"
-  echo "theme-manager: applying waybar style from ${style_path}"
+  if [[ -z "${QUIET_MODE:-}" ]]; then
+    echo "theme-manager: applying waybar config from ${config_path}"
+    echo "theme-manager: applying waybar style from ${style_path}"
+  fi
   if ! cp -p -f "${config_path}" "${waybar_config_dir}/config.jsonc"; then
     echo "theme-manager: failed to copy waybar config to ${waybar_config_dir}/config.jsonc" >&2
     return 1
@@ -173,7 +253,7 @@ apply_waybar_theme() {
     echo "theme-manager: failed to copy waybar style to ${waybar_config_dir}/style.css" >&2
     return 1
   fi
-  run_or_warn omarchy-restart-waybar
+  run_filtered omarchy-restart-waybar "waybar"
 }
 
 reload_components() {
@@ -181,17 +261,17 @@ reload_components() {
     return 0
   fi
 
-  run_or_warn omarchy-restart-terminal
+  run_filtered omarchy-restart-terminal "terminal"
   if command -v pgrep >/dev/null 2>&1; then
     if pgrep -x waybar >/dev/null 2>&1; then
-      run_or_warn omarchy-restart-waybar
+      run_filtered omarchy-restart-waybar "waybar"
     fi
   else
-    run_or_warn omarchy-restart-waybar
+    run_filtered omarchy-restart-waybar "waybar"
   fi
-  run_or_warn omarchy-restart-swayosd
-  run_or_warn hyprctl reload
-  run_or_warn makoctl reload
+  run_filtered omarchy-restart-swayosd "swayosd"
+  run_filtered hyprctl "hyprctl" reload
+  run_filtered makoctl "makoctl" reload
   if command -v pkill >/dev/null 2>&1; then
     pkill -SIGUSR2 btop >/dev/null 2>&1 || true
   fi
@@ -202,11 +282,11 @@ apply_theme_setters() {
     return 0
   fi
 
-  run_or_warn omarchy-theme-set-gnome
-  run_or_warn omarchy-theme-set-browser
-  run_or_warn omarchy-theme-set-vscode
-  run_or_warn omarchy-theme-set-cursor
-  run_or_warn omarchy-theme-set-obsidian
+  run_filtered omarchy-theme-set-gnome "gnome"
+  run_filtered omarchy-theme-set-browser "browser"
+  run_filtered omarchy-theme-set-vscode "vscode"
+  run_filtered omarchy-theme-set-cursor "cursor"
+  run_filtered omarchy-theme-set-obsidian "obsidian"
 }
 
 cmd_list() {
@@ -265,7 +345,7 @@ cmd_set() {
   if skip_apps; then
     :
   else
-    run_or_warn omarchy-theme-bg-next
+    run_filtered omarchy-theme-bg-next "background"
   fi
   reload_components
   apply_theme_setters
@@ -273,7 +353,11 @@ cmd_set() {
   if ! skip_hook; then
     local hook_path="${HOME}/.config/omarchy/hooks/theme-set"
     if [[ -x "${hook_path}" ]]; then
-      "${hook_path}" "${normalized_name}"
+      if [[ -n "${QUIET_MODE:-}" ]]; then
+        "${hook_path}" "${normalized_name}" >/dev/null 2>&1 || true
+      else
+        "${hook_path}" "${normalized_name}"
+      fi
     fi
   fi
 
@@ -349,6 +433,10 @@ parse_waybar_args() {
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      -q|--quiet)
+        QUIET_MODE=1
+        shift
+        ;;
       -w|--waybar)
         if [[ -n "${2:-}" && "${2}" != -* ]]; then
           WAYBAR_MODE="named"
@@ -370,6 +458,23 @@ parse_waybar_args() {
         ;;
     esac
   done
+}
+
+parse_quiet_args() {
+  local args=()
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -q|--quiet)
+        QUIET_MODE=1
+        shift
+        ;;
+      *)
+        args+=("$1")
+        shift
+        ;;
+    esac
+  done
+  printf '%s\n' "${args[@]}"
 }
 
 list_waybar_themes() {
@@ -599,7 +704,9 @@ main() {
       ;;
     browse)
       shift
-      if [[ $# -gt 0 ]]; then
+      local remaining
+      remaining="$(parse_quiet_args "$@")"
+      if [[ -n "${remaining}" ]]; then
         echo "theme-manager: browse takes no arguments" >&2
         return 2
       fi
