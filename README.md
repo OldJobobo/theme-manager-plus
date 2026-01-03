@@ -8,6 +8,7 @@ What it does:
 - Runs Omarchy’s own theme scripts so apps update the same way they do from the menu.
 - Reloads the usual components (Waybar, terminals, notifications, etc.).
 - Can also apply a Waybar theme when you ask it to.
+- Includes a TUI app launcher entry in Omarchy (see “Omarchy App Launcher Integration”).
 
 ## Quick Start
 Requirements:
@@ -110,7 +111,8 @@ Environment flags (optional):
 - `THEME_MANAGER_SKIP_HOOK=1` skips `omarchy-hook theme-set`.
 
 ## Omarchy App Launcher Integration
-Theme Manager Plus integrates as a TUI app in Omarchy’s app launcher.
+Theme Manager Plus integrates as a TUI app in Omarchy’s app launcher. This gives you
+a standalone, floating terminal window that runs the same `browse` flow as the CLI.
 
 Install the launcher:
 ```
@@ -122,6 +124,12 @@ This uses Omarchy’s TUI installer to create:
 
 The launcher opens a floating terminal and runs:
 `theme-manager browse -q`.
+
+Optional keybind:
+Add a Hyprland bind to open the launcher directly:
+```
+bindd = SUPER SHIFT, R, Theme Manager+, exec, gtk-launch "Theme Manager+"
+```
 
 ## Troubleshooting (Common)
 - “theme not found” → check spelling or `THEME_ROOT_DIR`.
