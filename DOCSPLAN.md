@@ -4,6 +4,8 @@
 - Purpose: alternative manager that triggers Omarchy’s theme switch flow (menu parity).
 - Non-goals: not replacing Omarchy’s theming system.
 - High-level behavior: set theme symlink, run Omarchy tools, apply optional Waybar themes.
+- Writing style: plain English, simple terms, minimal jargon; short sentences; explain “why” when helpful.
+- Examples: avoid real theme names; use placeholders like `<ThemeName>`.
 
 ## 2) Quick Start
 - Prereqs: Omarchy installed, PATH includes Omarchy scripts, fzf optional for browsing.
