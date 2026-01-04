@@ -6,30 +6,30 @@
 - [x] Keep behavior backward compatible when no config exists.
 
 ## 2) Config File Location & Precedence
-- [x] Default path: `~/.config/theme-manager/config`
-- [x] Optional project/local override: `./.theme-manager.conf`
+- [x] Default path: `~/.config/theme-manager/config.toml`
+- [x] Optional project/local override: `./.theme-manager.toml`
 - [x] Precedence: CLI flags > env vars > local config > user config > defaults.
 
 ## 3) Config Format
-- [x] Simple `KEY=VALUE` shell-style file (easy to parse).
-- [x] Only allow known keys; ignore unknowns with a warning.
+- [x] TOML config with `[paths]`, `[waybar]`, `[starship]`, `[behavior]` sections.
+- [x] Unknown keys are ignored by default TOML parsing.
 
 ## 4) Config Keys (Initial Set)
-- [x] `THEME_ROOT_DIR` (default: `~/.config/omarchy/themes`)
-- [x] `CURRENT_THEME_LINK` (default: `~/.config/omarchy/current/theme`)
-- [x] `OMARCHY_BIN_DIR` (optional; used to prepend PATH)
-- [x] `WAYBAR_DIR` (default: `~/.config/waybar`)
-- [x] `WAYBAR_THEMES_DIR` (default: `~/.config/waybar/themes`)
-- [x] `WAYBAR_APPLY_MODE` (`copy` or `exec`)
-- [x] `WAYBAR_RESTART_CMD` (optional; override restart command when `exec`)
-- [x] `DEFAULT_WAYBAR_MODE` (`auto` or `named`)
-- [x] `DEFAULT_WAYBAR_NAME` (used when mode is `named`)
-- [x] `STARSHIP_CONFIG` (default: `~/.config/starship.toml`)
-- [x] `STARSHIP_THEMES_DIR` (default: `~/.config/starship-themes`)
-- [x] `DEFAULT_STARSHIP_MODE` (`preset` or `named`)
-- [x] `DEFAULT_STARSHIP_PRESET` (used when mode is `preset`)
-- [x] `DEFAULT_STARSHIP_NAME` (used when mode is `named`)
-- [x] `QUIET_MODE_DEFAULT` (`1` or empty)
+- [x] `[paths].theme_root_dir` (default: `~/.config/omarchy/themes`)
+- [x] `[paths].current_theme_link` (default: `~/.config/omarchy/current/theme`)
+- [x] `[paths].omarchy_bin_dir` (optional; prepends PATH)
+- [x] `[paths].waybar_dir` (default: `~/.config/waybar`)
+- [x] `[paths].waybar_themes_dir` (default: `~/.config/waybar/themes`)
+- [x] `[paths].starship_config` (default: `~/.config/starship.toml`)
+- [x] `[paths].starship_themes_dir` (default: `~/.config/starship-themes`)
+- [x] `[waybar].apply_mode` (`copy` or `exec`)
+- [x] `[waybar].restart_cmd` (override restart command when `exec`)
+- [x] `[waybar].default_mode` (`auto` or `named`)
+- [x] `[waybar].default_name` (used when mode is `named`)
+- [x] `[starship].default_mode` (`preset` or `named`)
+- [x] `[starship].default_preset` (used when mode is `preset`)
+- [x] `[starship].default_name` (used when mode is `named`)
+- [x] `[behavior].quiet_default` (true/false)
 
 ## 5) Load Order Logic
 - [x] Add `load_config()` early in `main`.
@@ -37,9 +37,7 @@
 - [x] Merge with env vars and CLI flags.
 
 ## 6) Security & Safety
-- [x] Do not `source` arbitrary config without validation.
-- [x] Parse lines as `KEY=VALUE` and whitelist keys.
-- [x] Trim quotes and whitespace.
+- [x] Use strict TOML parsing and avoid `source` semantics.
 
 ## 7) CLI Behavior
 - [x] Flags override config.

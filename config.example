@@ -1,4 +1,6 @@
-# theme-manager config (copy to ~/.config/theme-manager/config or ./.theme-manager.conf)
+# Legacy bash config (for the Bash CLI only).
+# Copy to ~/.config/theme-manager/config or ./.theme-manager.conf
+# For Rust, use config.toml.example as a template.
 # Lines beginning with # are comments. Values are KEY=VALUE.
 
 # Precedence: CLI flags > env vars > local config > user config > defaults.

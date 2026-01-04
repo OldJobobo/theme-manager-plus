@@ -14,14 +14,14 @@ What it does:
 Requirements:
 - Omarchy installed on this machine.
 - Omarchy scripts available in PATH (or set `OMARCHY_BIN_DIR` in config).
-- `fzf` is optional (only needed for `browse`).
 - `starship` is optional (only needed for preset selection or applying Starship presets).
+- `kitty` or `chafa` is optional for browse previews (text fallback otherwise).
 
 Common commands:
-- `./bin/theme-manager list` — show available themes.
-- `./bin/theme-manager set <ThemeName>` — switch to a theme.
-- `./bin/theme-manager set <ThemeName> -w` — switch and apply the theme’s Waybar theme.
-- `./bin/theme-manager browse` — pick a theme and Waybar option in a full‑screen selector.
+- `theme-manager list` — show available themes.
+- `theme-manager set <ThemeName>` — switch to a theme.
+- `theme-manager set <ThemeName> -w` — switch and apply the theme’s Waybar theme.
+- `theme-manager browse` — pick a theme and Waybar option in a full‑screen selector.
 - Starship presets or user themes can be applied via config defaults or `browse`.
 
 ## Command Reference (Short)
@@ -124,26 +124,21 @@ Order of operations (simplified):
 
 ## Configuration
 You can set defaults in either file:
-- `~/.config/theme-manager/config`
-- `./.theme-manager.conf` (local file wins)
+- `~/.config/theme-manager/config.toml`
+- `./.theme-manager.toml` (local file wins)
 
-Keys (all optional):
-- `THEME_ROOT_DIR`, `CURRENT_THEME_LINK`
-- `OMARCHY_BIN_DIR`
-- `WAYBAR_DIR`, `WAYBAR_THEMES_DIR`
-- `WAYBAR_APPLY_MODE` (`copy` or `exec`)
-- `WAYBAR_RESTART_CMD` (optional override when `WAYBAR_APPLY_MODE="exec"`)
-- `DEFAULT_WAYBAR_MODE` (`auto` or `named`)
-- `DEFAULT_WAYBAR_NAME`
-- `STARSHIP_CONFIG`, `STARSHIP_THEMES_DIR`
-- `DEFAULT_STARSHIP_MODE` (`preset` or `named`)
-- `DEFAULT_STARSHIP_PRESET`
-- `DEFAULT_STARSHIP_NAME`
-- `QUIET_MODE_DEFAULT` (`1` to enable quiet mode by default)
+Migration note:
+- The Rust CLI uses TOML. The legacy Bash CLI still supports `~/.config/theme-manager/config` and `./.theme-manager.conf`.
+
+TOML sections (all optional):
+- `[paths]` for theme, waybar, and starship locations
+- `[waybar]` for apply mode and defaults
+- `[starship]` for preset/named defaults
+- `[behavior]` for quiet defaults
 
 Precedence order: CLI flags > env vars > local config > user config > defaults.
 
-Use `./bin/theme-manager print-config` to see resolved values.
+Use `theme-manager print-config` to see resolved values.
 
 Environment flags (optional):
 - `THEME_MANAGER_SKIP_APPS=1` skips app reloads and setters (fast, but not full parity).
@@ -182,16 +177,18 @@ hyprctl reload
 - Odd warnings from browsers, GTK, or Wayland → usually safe to ignore; use `-q` to quiet them.
 
 ## Testing
-Run tests with:
+Run Rust tests with:
 ```
-./tests/run.sh
+cd rust
+cargo test
 ```
-Requires `bats` in PATH.
+Legacy Bats tests still live under `tests/` for the Bash CLI.
 
 ## Development Notes
-- Core logic: `src/theme-manager.sh`
-- CLI entry: `bin/theme-manager`
-- Tests: `tests/`
+- Rust CLI entry: `rust/src/main.rs`
+- Bash CLI (legacy): `bin/theme-manager`
+- Rust tests: `rust/tests/`
+- Legacy Bats tests: `tests/`
 
 When adding new features:
 - Keep behavior compatible with Omarchy’s flow.
@@ -209,4 +206,4 @@ Copying is more reliable with Waybar restarts and avoids symlink edge cases.
 Yes, set `THEME_ROOT_DIR` in your config.
 
 **Does browse require fzf?**  
-Yes. Without `fzf`, use `set` and other commands directly.
+No. The Rust TUI replaces the `fzf` flow.

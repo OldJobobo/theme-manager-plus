@@ -8,7 +8,7 @@
 - Examples: avoid real theme names; use placeholders like `<ThemeName>`.
 
 ## 2) Quick Start
-- Prereqs: Omarchy installed, PATH includes Omarchy scripts, fzf optional for browsing.
+- Prereqs: Omarchy installed, PATH includes Omarchy scripts, kitty/chafa optional for previews.
 - Basic commands:
   - `./bin/theme-manager list`
   - `./bin/theme-manager set <theme>`
@@ -51,6 +51,7 @@
   - `THEME_MANAGER_SKIP_APPS`
   - `THEME_MANAGER_SKIP_HOOK`
 - Directory layout: `~/.config/omarchy`, `~/.config/waybar`.
+- Config format: TOML (`config.toml.example`).
 
 ## 7) Troubleshooting
 - Common warnings and what they mean.
@@ -58,8 +59,8 @@
 - Quiet vs verbose behavior.
 
 ## 8) Testing
-- Test harness: `./tests/run.sh`.
-- Bats requirement.
+- Rust tests: `cargo test` in `rust/`.
+- Legacy Bats tests (Bash CLI): `./tests/run.sh`.
 - Adding fixtures and new tests.
 
 ## 9) Development Guide
