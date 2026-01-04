@@ -21,7 +21,7 @@ Commands:
 USAGE
 }
 
-VERSION="0.1.4"
+VERSION="0.1.5"
 
 theme_root_dir() {
   echo "${THEME_ROOT_DIR:-${HOME}/.config/omarchy/themes}"
@@ -53,6 +53,10 @@ starship_themes_dir() {
   else
     echo "${HOME}/.config/starship-themes"
   fi
+}
+
+waybar_apply_mode() {
+  echo "${WAYBAR_APPLY_MODE:-exec}"
 }
 
 skip_apps() {
@@ -230,7 +234,7 @@ run_filtered() {
 
 load_config_file() {
   local path="$1"
-  local allow_keys=("THEME_ROOT_DIR" "CURRENT_THEME_LINK" "OMARCHY_BIN_DIR" "WAYBAR_DIR" "WAYBAR_THEMES_DIR" "STARSHIP_CONFIG" "STARSHIP_THEMES_DIR" "DEFAULT_WAYBAR_MODE" "DEFAULT_WAYBAR_NAME" "DEFAULT_STARSHIP_MODE" "DEFAULT_STARSHIP_PRESET" "DEFAULT_STARSHIP_NAME" "QUIET_MODE_DEFAULT")
+  local allow_keys=("THEME_ROOT_DIR" "CURRENT_THEME_LINK" "OMARCHY_BIN_DIR" "WAYBAR_DIR" "WAYBAR_THEMES_DIR" "WAYBAR_APPLY_MODE" "WAYBAR_RESTART_CMD" "STARSHIP_CONFIG" "STARSHIP_THEMES_DIR" "DEFAULT_WAYBAR_MODE" "DEFAULT_WAYBAR_NAME" "DEFAULT_STARSHIP_MODE" "DEFAULT_STARSHIP_PRESET" "DEFAULT_STARSHIP_NAME" "QUIET_MODE_DEFAULT")
 
   [[ -f "${path}" ]] || return 0
 
@@ -278,7 +282,7 @@ load_config_file() {
 
 apply_env_overrides() {
   local key
-  for key in THEME_ROOT_DIR CURRENT_THEME_LINK OMARCHY_BIN_DIR WAYBAR_DIR WAYBAR_THEMES_DIR STARSHIP_CONFIG STARSHIP_THEMES_DIR DEFAULT_WAYBAR_MODE DEFAULT_WAYBAR_NAME DEFAULT_STARSHIP_MODE DEFAULT_STARSHIP_PRESET DEFAULT_STARSHIP_NAME QUIET_MODE_DEFAULT QUIET_MODE; do
+  for key in THEME_ROOT_DIR CURRENT_THEME_LINK OMARCHY_BIN_DIR WAYBAR_DIR WAYBAR_THEMES_DIR WAYBAR_APPLY_MODE WAYBAR_RESTART_CMD STARSHIP_CONFIG STARSHIP_THEMES_DIR DEFAULT_WAYBAR_MODE DEFAULT_WAYBAR_NAME DEFAULT_STARSHIP_MODE DEFAULT_STARSHIP_PRESET DEFAULT_STARSHIP_NAME QUIET_MODE_DEFAULT QUIET_MODE; do
     if [[ -n "${!key-}" ]]; then
       printf -v "${key}" '%s' "${!key}"
     fi
@@ -344,6 +348,8 @@ CURRENT_THEME_LINK=$(current_theme_link)
 OMARCHY_BIN_DIR=${OMARCHY_BIN_DIR:-}
 WAYBAR_DIR=$(waybar_dir)
 WAYBAR_THEMES_DIR=$(waybar_themes_dir)
+WAYBAR_APPLY_MODE=$(waybar_apply_mode)
+WAYBAR_RESTART_CMD=${WAYBAR_RESTART_CMD:-}
 STARSHIP_CONFIG=$(starship_config_path)
 STARSHIP_THEMES_DIR=$(starship_themes_dir)
 DEFAULT_WAYBAR_MODE=${DEFAULT_WAYBAR_MODE:-}
@@ -388,6 +394,34 @@ apply_waybar_theme() {
   local style_path="${waybar_dir}/style.css"
   if [[ ! -f "${config_path}" || ! -f "${style_path}" ]]; then
     echo "theme-manager: waybar theme missing config.jsonc or style.css in ${waybar_dir}" >&2
+    return 0
+  fi
+
+  local apply_mode
+  apply_mode="$(waybar_apply_mode)"
+  if [[ "${apply_mode}" == "exec" ]]; then
+    local restart_cmd="${WAYBAR_RESTART_CMD:-tmplus-restart-waybar}"
+    local restart_args=()
+    if [[ -n "${WAYBAR_RESTART_CMD:-}" ]]; then
+      read -r -a restart_args <<< "${WAYBAR_RESTART_CMD}"
+    else
+      restart_args=("${restart_cmd}")
+    fi
+
+    local cmd_name="${restart_args[0]}"
+    if ! command_exists "${cmd_name}"; then
+      echo "theme-manager: waybar restart helper not found: ${cmd_name}; falling back to copy mode" >&2
+      apply_mode="copy"
+    else
+      if [[ -z "${QUIET_MODE:-}" ]]; then
+        echo "theme-manager: applying waybar config via ${cmd_name}"
+      fi
+      "${restart_args[@]}" -c "${config_path}" -s "${style_path}" || true
+      return 0
+    fi
+  fi
+
+  if [[ "${apply_mode}" != "copy" ]]; then
     return 0
   fi
 
@@ -482,6 +516,25 @@ apply_starship() {
       fi
       if [[ ! -f "${theme_path}" ]]; then
         echo "theme-manager: starship theme not found: ${theme_path}" >&2
+        return 1
+      fi
+      if [[ -z "${QUIET_MODE:-}" ]]; then
+        echo "theme-manager: applying starship theme ${theme_path}"
+      fi
+      if ! cp -p -f "${theme_path}" "${config_path}"; then
+        echo "theme-manager: failed to copy starship theme to ${config_path}" >&2
+        return 1
+      fi
+      ;;
+    theme)
+      local theme_path="${STARSHIP_THEME_PATH:-}"
+      if [[ -z "${theme_path}" ]]; then
+        local current_dir
+        current_dir="$(current_theme_dir 2>/dev/null || true)"
+        theme_path="${current_dir}/starship.yaml"
+      fi
+      if [[ -z "${theme_path}" || ! -f "${theme_path}" ]]; then
+        echo "theme-manager: starship theme file not found: ${theme_path}" >&2
         return 1
       fi
       if [[ -z "${QUIET_MODE:-}" ]]; then
@@ -791,6 +844,9 @@ preview="${preview%\'}"
 preview_dir="${preview%/}"
 preview="${preview_dir}/preview.png"
 if [ ! -f "$preview" ]; then
+  preview="${preview_dir}/theme.png"
+fi
+if [ ! -f "$preview" ]; then
   preview="${preview_dir}/waybar-theme/preview.png"
 fi
 if [ ! -f "$preview" ]; then
@@ -801,10 +857,18 @@ if [ -f "$preview" ]; then
     chafa --format=symbols --size="${FZF_PREVIEW_COLUMNS}x${FZF_PREVIEW_LINES}" "$preview"
   elif [ -n "$KITTY_WINDOW_ID" ] && command -v kitty >/dev/null 2>&1; then
     kitty +kitten icat --clear --transfer-mode=stream --stdin=no --place "${FZF_PREVIEW_COLUMNS}x${FZF_PREVIEW_LINES}@0x0" --scale-up "$preview"
+    i=0
+    while [ "$i" -lt "${FZF_PREVIEW_LINES}" ]; do
+      printf "\n"
+      i=$((i + 1))
+    done
   else
     file "$preview"
   fi
 else
+  if [ -n "$KITTY_WINDOW_ID" ] && command -v kitty >/dev/null 2>&1; then
+    kitty +kitten icat --clear --transfer-mode=stream --stdin=no
+  fi
   echo "No preview.png or backgrounds image found."
 fi
 PREVIEW_CMD
@@ -818,11 +882,11 @@ PREVIEW_CMD
   if [[ ${preview_supported} -eq 1 ]]; then
     local preview_bind='q:abort'
     if [[ -n "${KITTY_WINDOW_ID:-}" ]] && command -v kitty >/dev/null 2>&1; then
-      preview_bind='q:abort+execute-silent(kitty +kitten icat --clear >/dev/null 2>&1),esc:abort+execute-silent(kitty +kitten icat --clear >/dev/null 2>&1),enter:accept+execute-silent(kitty +kitten icat --clear >/dev/null 2>&1)'
+      preview_bind='q:abort+execute-silent(kitty +kitten icat --clear --stdin=no >/dev/null 2>&1),esc:abort+execute-silent(kitty +kitten icat --clear --stdin=no >/dev/null 2>&1),enter:accept+execute-silent(kitty +kitten icat --clear --stdin=no >/dev/null 2>&1)'
     else
       preview_bind='q:abort,esc:abort'
     fi
-    theme_choice="$(printf '%s\n' "${themes}" | while IFS= read -r name; do printf '%s\t%s\n' "${themes_dir}/${name}" "$(title_case_theme "${name}")"; done | fzf --prompt='Select theme: ' --cycle --reverse --height=100% --border --border-label=" Theme Manager+ v${VERSION} " --border-label-pos=2 --padding=1 --preview "${preview_cmd}" --preview-window=right,60% --preview-border=rounded --with-nth=2 --delimiter=$'\t' --bind "${preview_bind}")" || return 0
+    theme_choice="$(printf '%s\n' "${themes}" | while IFS= read -r name; do printf '%s\t%s\n' "${themes_dir}/${name}" "$(title_case_theme "${name}")"; done | fzf --prompt='Select theme: ' --cycle --reverse --height=100% --border --border-label=" Theme Manager+ v${VERSION} " --border-label-pos=2 --padding=1 --preview "${preview_cmd}" --preview-window=right,75% --preview-border=rounded --with-nth=2 --delimiter=$'\t' --bind "${preview_bind}")" || return 0
   else
     theme_choice="$(printf '%s\n' "${themes}" | while IFS= read -r name; do printf '%s\t%s\n' "${themes_dir}/${name}" "$(title_case_theme "${name}")"; done | fzf --prompt='Select theme: ' --cycle --reverse --height=100% --border --border-label=" Theme Manager+ v${VERSION} " --border-label-pos=2 --padding=1 --with-nth=2 --delimiter=$'\t' --bind 'q:abort')" || return 0
   fi
@@ -859,19 +923,30 @@ preview={3}
 preview="${preview#\'}"
 preview="${preview%\'}"
 if [ -z "$preview" ] || [ "$preview" = "-" ]; then
-  echo "No preview.png"
-  exit 0
-fi
-if [ -f "$preview" ]; then
-  if command -v chafa >/dev/null 2>&1; then
-    chafa --format=symbols --size="${FZF_PREVIEW_COLUMNS}x${FZF_PREVIEW_LINES}" "$preview"
-  elif [ -n "$KITTY_WINDOW_ID" ] && command -v kitty >/dev/null 2>&1; then
-    kitty +kitten icat --clear --transfer-mode=stream --stdin=no --place "${FZF_PREVIEW_COLUMNS}x${FZF_PREVIEW_LINES}@0x0" --scale-up "$preview"
-  else
-    file "$preview"
+  if [ -n "$KITTY_WINDOW_ID" ] && command -v kitty >/dev/null 2>&1; then
+    kitty +kitten icat --clear --transfer-mode=stream --stdin=no
   fi
-else
   echo "No preview.png"
+else
+  if [ -f "$preview" ]; then
+    if command -v chafa >/dev/null 2>&1; then
+      chafa --format=symbols --size="${FZF_PREVIEW_COLUMNS}x${FZF_PREVIEW_LINES}" "$preview"
+    elif [ -n "$KITTY_WINDOW_ID" ] && command -v kitty >/dev/null 2>&1; then
+      kitty +kitten icat --clear --transfer-mode=stream --stdin=no --place "${FZF_PREVIEW_COLUMNS}x${FZF_PREVIEW_LINES}@0x0" --scale-up "$preview"
+      i=0
+      while [ "$i" -lt "${FZF_PREVIEW_LINES}" ]; do
+        printf "\n"
+        i=$((i + 1))
+      done
+    else
+      file "$preview"
+    fi
+  else
+    if [ -n "$KITTY_WINDOW_ID" ] && command -v kitty >/dev/null 2>&1; then
+      kitty +kitten icat --clear --transfer-mode=stream --stdin=no
+    fi
+    echo "No preview.png"
+  fi
 fi
 PREVIEW_CMD
 )"
@@ -886,23 +961,25 @@ PREVIEW_CMD
             printf '%s\t%s\t-\n' "default" "Omarchy default"
             ;;
           "Use theme waybar")
-            if [[ -f "${theme_path}/waybar-theme/preview.png" ]]; then
-              printf '%s\t%s\t%s\n' "theme" "Use theme waybar" "${theme_path}/waybar-theme/preview.png"
+            local preview_file
+            preview_file="$(find -L "${theme_path}/waybar-theme" -maxdepth 1 -type f \( -iname "*.png" -o -iname "*.PNG" \) 2>/dev/null | sort | head -n 1)"
+            if [[ -n "${preview_file}" ]]; then
+              printf '%s\t%s\t%s\n' "theme" "Use theme waybar" "${preview_file}"
             else
               printf '%s\t%s\t-\n' "theme" "Use theme waybar"
             fi
             ;;
           *)
             local preview_path
-            preview_path="$(waybar_themes_dir)/${option}/preview.png"
-            if [[ -f "${preview_path}" ]]; then
+            preview_path="$(find -L "$(waybar_themes_dir)/${option}" -maxdepth 1 -type f \( -iname "*.png" -o -iname "*.PNG" \) 2>/dev/null | sort | head -n 1)"
+            if [[ -n "${preview_path}" ]]; then
               printf '%s\t%s\t%s\n' "named" "${option}" "${preview_path}"
             else
               printf '%s\t%s\t-\n' "named" "${option}"
             fi
             ;;
         esac
-      done | fzf --prompt='Select Waybar: ' --cycle --reverse --height=100% --border --border-label=" Theme Manager+ v${VERSION} " --border-label-pos=2 --padding=1 --preview "${waybar_preview_cmd}" --preview-window=right,60% --preview-border=rounded --with-nth=2 --delimiter=$'\t' --bind 'q:abort'
+      done | fzf --prompt='Select Waybar: ' --cycle --reverse --height=100% --border --border-label=" Theme Manager+ v${VERSION} " --border-label-pos=2 --padding=1 --preview "${waybar_preview_cmd}" --preview-window=right,75% --preview-border=rounded --with-nth=2 --delimiter=$'\t' --bind 'q:abort'
     )" || return 0
   else
     waybar_choice="$(printf '%s\n' "${WAYBAR_OPTIONS[@]}" | fzf --prompt='Select Waybar: ' --cycle --reverse --height=100% --border --border-label=" Theme Manager+ v${VERSION} " --border-label-pos=2 --padding=1 --bind 'q:abort')" || return 0
@@ -930,6 +1007,10 @@ PREVIEW_CMD
   STARSHIP_OPTIONS=()
   add_unique_starship_option "Omarchy default"
 
+  if [[ -f "${theme_path}/starship.yaml" ]]; then
+    add_unique_starship_option "Use theme starship"
+  fi
+
   local preset
   while IFS= read -r preset; do
     [[ -z "${preset}" ]] && continue
@@ -943,28 +1024,129 @@ PREVIEW_CMD
   done <<< "$(list_starship_themes)"
 
   if [[ ${#STARSHIP_OPTIONS[@]} -gt 1 ]]; then
+    local starship_preview_cmd=""
+    if command -v starship >/dev/null 2>&1; then
+      local themes_dir_val
+      themes_dir_val="$(starship_themes_dir)"
+      
+      # Create a temporary preview script
+      local preview_script
+      preview_script="$(mktemp)"
+      cat > "${preview_script}" <<'PREVIEW_SCRIPT'
+#!/usr/bin/env bash
+choice="$1"
+theme_path="$2"
+themes_dir="$3"
+
+if [ "$choice" = "Omarchy default" ]; then
+  echo "No Starship config change"
+  echo ""
+  echo "The current Omarchy theme prompt will be used."
+  exit 0
+fi
+
+if [ "$choice" = "Use theme starship" ]; then
+  config_path="${theme_path}/starship.yaml"
+  if [ ! -f "$config_path" ]; then
+    echo "Theme-specific Starship config not found"
+    exit 0
+  fi
+elif [[ "$choice" == "Preset: "* ]]; then
+  preset_name="${choice#Preset: }"
+  tmp_config="$(mktemp)"
+  if ! starship preset "$preset_name" > "$tmp_config" 2>/dev/null; then
+    echo "Failed to load preset: $preset_name"
+    rm -f "$tmp_config"
+    exit 0
+  fi
+  config_path="$tmp_config"
+elif [[ "$choice" == "Theme: "* ]]; then
+  theme_name="${choice#Theme: }"
+  config_path="${themes_dir}/${theme_name}.toml"
+  if [ ! -f "$config_path" ]; then
+    echo "Theme config not found: $config_path"
+    exit 0
+  fi
+else
+  echo "Unknown selection"
+  exit 0
+fi
+
+if [ -f "$config_path" ]; then
+  echo "=== Starship Prompt Preview ==="
+  echo ""
+  preview_dir="$(mktemp -d)"
+  cd "$preview_dir" || exit 0
+  git init -q 2>/dev/null
+  echo "mock" > README.md
+  git add . 2>/dev/null
+  
+  if command -v perl >/dev/null 2>&1; then
+    STARSHIP_CONFIG="$config_path" starship prompt --path "$preview_dir" --terminal-width "${FZF_PREVIEW_COLUMNS:-80}" --jobs 0 2>/dev/null | perl -pe 's/\\\[//g; s/\\\]//g' || echo "Failed to render prompt"
+  else
+    STARSHIP_CONFIG="$config_path" starship prompt --path "$preview_dir" --terminal-width "${FZF_PREVIEW_COLUMNS:-80}" --jobs 0 2>/dev/null | sed 's/\\[//g; s/\\]//g' || echo "Failed to render prompt"
+  fi
+  echo ""
+  
+  if command -v perl >/dev/null 2>&1; then
+    right_prompt="$(STARSHIP_CONFIG="$config_path" starship prompt --right --path "$preview_dir" --terminal-width "${FZF_PREVIEW_COLUMNS:-80}" 2>/dev/null | perl -pe 's/\\\[//g; s/\\\]//g')"
+  else
+    right_prompt="$(STARSHIP_CONFIG="$config_path" starship prompt --right --path "$preview_dir" --terminal-width "${FZF_PREVIEW_COLUMNS:-80}" 2>/dev/null | sed 's/\\[//g; s/\\]//g')"
+  fi
+  if [ -n "$right_prompt" ]; then
+    echo "Right prompt: $right_prompt"
+    echo ""
+  fi
+  
+  cd /tmp || exit 0
+  rm -rf "$preview_dir"
+  [ -n "${tmp_config:-}" ] && rm -f "$tmp_config"
+  
+  echo "---"
+  echo "Config: $choice"
+fi
+PREVIEW_SCRIPT
+      chmod +x "${preview_script}"
+      starship_preview_cmd="${preview_script} {} \"${theme_path}\" \"${themes_dir_val}\""
+    fi
+
     local starship_choice
-    starship_choice="$(printf '%s\n' "${STARSHIP_OPTIONS[@]}" | fzf --prompt='Select Starship: ' --cycle --reverse --height=100% --border --border-label=" Theme Manager+ v${VERSION} " --border-label-pos=2 --padding=1 --bind 'q:abort')" || return 0
+    if [[ -n "${starship_preview_cmd}" ]]; then
+      starship_choice="$(printf '%s\n' "${STARSHIP_OPTIONS[@]}" | fzf --prompt='Select Starship: ' --cycle --reverse --height=100% --border --border-label=" Theme Manager+ v${VERSION} " --border-label-pos=2 --padding=1 --preview "${starship_preview_cmd}" --preview-window=right:60%:wrap --bind 'q:abort')" || { rm -f "${preview_script}"; return 0; }
+      rm -f "${preview_script}"
+    else
+      starship_choice="$(printf '%s\n' "${STARSHIP_OPTIONS[@]}" | fzf --prompt='Select Starship: ' --cycle --reverse --height=100% --border --border-label=" Theme Manager+ v${VERSION} " --border-label-pos=2 --padding=1 --bind 'q:abort')" || return 0
+    fi
     case "${starship_choice}" in
       "Omarchy default")
         STARSHIP_MODE="none"
         STARSHIP_PRESET=""
         STARSHIP_NAME=""
+        STARSHIP_THEME_PATH=""
+        ;;
+      "Use theme starship")
+        STARSHIP_MODE="theme"
+        STARSHIP_PRESET=""
+        STARSHIP_NAME=""
+        STARSHIP_THEME_PATH="${theme_path}/starship.yaml"
         ;;
       "Preset: "*)
         STARSHIP_MODE="preset"
         STARSHIP_PRESET="${starship_choice#Preset: }"
         STARSHIP_NAME=""
+        STARSHIP_THEME_PATH=""
         ;;
       "Theme: "*)
         STARSHIP_MODE="named"
         STARSHIP_NAME="${starship_choice#Theme: }"
         STARSHIP_PRESET=""
+        STARSHIP_THEME_PATH=""
         ;;
       *)
         STARSHIP_MODE="none"
         STARSHIP_PRESET=""
         STARSHIP_NAME=""
+        STARSHIP_THEME_PATH=""
         ;;
     esac
   fi

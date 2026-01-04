@@ -14,9 +14,9 @@
   - `./bin/theme-manager set <theme>`
   - `./bin/theme-manager browse`
 - Example usage flows:
-  - `./bin/theme-manager set Miasma -w`
-  - `./bin/theme-manager set Miasma -w default`
-  - `./bin/theme-manager set Miasma -w -q`
+  - `./bin/theme-manager set <ThemeName> -w`
+  - `./bin/theme-manager set <ThemeName> -w default`
+  - `./bin/theme-manager set <ThemeName> -w -q`
 
 ## 3) Command Reference
 - `set <theme> [-w/--waybar [name]] [-q/--quiet]`
@@ -33,12 +33,14 @@
   - auto (use theme’s `waybar-theme` if present)
   - named (use `~/.config/waybar/themes/<name>`)
 - Copy behavior (no backups).
-- Restart behavior (`omarchy-restart-waybar`).
+- Restart behavior (`omarchy-restart-waybar`, plus optional `tmplus-restart-waybar` helper).
+- Preview selection: `waybar-theme/preview.png` (case-insensitive), `theme.png` fallback, then first image in `backgrounds/`.
 
 ## 5) Omarchy Compatibility
 - Omarchy tools invoked:
   - `omarchy-theme-bg-next`
   - `omarchy-restart-terminal`, `omarchy-restart-waybar`, `omarchy-restart-swayosd`
+  - `extras/omarchy/tmplus-restart-waybar` for Waybar restarts with `-c/-s` flags
   - `omarchy-theme-set-gnome`, `omarchy-theme-set-browser`, `omarchy-theme-set-vscode`, `omarchy-theme-set-cursor`, `omarchy-theme-set-obsidian`
   - `omarchy-hook theme-set`
 - Parity gaps (if any) and rationale.

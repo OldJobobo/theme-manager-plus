@@ -1,0 +1,182 @@
+"$schema" = 'https://starship.rs/config-schema.json'
+
+format = """
+[](color_bg3)\
+$os\
+$username\
+[](bg:color_purple fg:color_bg3)\
+$directory\
+[](fg:color_purple bg:color_yellow)\
+$git_branch\
+$git_status\
+[](fg:color_yellow bg:color_orange)\
+$c\
+$cpp\
+$rust\
+$golang\
+$nodejs\
+$php\
+$java\
+$kotlin\
+$haskell\
+$python\
+[](fg:color_orange bg:color_dkblue)\
+$docker_context\
+$conda\
+$pixi\
+[](fg:color_dkblue bg:color_bg3)\
+$time\
+[ ](fg:color_bg3)\
+$line_break$character"""
+
+palette = 'dracula'
+
+# Define Dracula color palette
+[palettes.dracula]
+color_bg1 = "#282a36"
+color_bg3 = "#44475a"
+color_fg0 = "#0b0107"
+color_dkblue = "#6272a4"
+color_blue = "#3f93ec"
+color_aqua = "#8be9fd"
+color_green = "#50fa7b"
+color_orange = "#ffb86c"
+color_pink = "#ff79c6"
+color_purple = "#bd93f9"
+color_red = "#ff5555"
+color_yellow = "#f1fa8c"
+
+[os]
+disabled = false
+style = "bg:color_bg3 fg:color_purple"
+
+[os.symbols]
+Windows = "󰍲"
+Ubuntu = "󰕈"
+SUSE = ""
+Raspbian = "󰐿"
+Mint = "󰣭"
+Macos = "󰀵"
+Manjaro = ""
+Linux = "󰌽"
+Gentoo = "󰣨"
+Fedora = "󰣛"
+Alpine = ""
+Amazon = ""
+Android = ""
+AOSC = ""
+# Arch = "󰣇"
+Arch = "󰣇"
+Artix = "󰣇"
+EndeavourOS = ""
+CentOS = ""
+Debian = "󰣚"
+Redhat = "󱄛"
+RedHatEnterprise = "󱄛"
+Pop = ""
+
+[username]
+show_always = true
+style_user = "bg:color_bg3 fg:color_purple"
+style_root = "bg:color_bg3 fg:color_purple"
+format = '[ $user ]($style)'
+
+[directory]
+style = "fg:color_fg0 bg:color_purple"
+format = "[ $path ]($style)"
+truncation_length = 3
+truncation_symbol = "…/"
+
+[directory.substitutions]
+"Documents" = "󰈙 "
+"Downloads" = " "
+"Music" = "󰝚 "
+"Pictures" = " "
+"Developer" = "󰲋 "
+
+[git_branch]
+symbol = ""
+style = "bg:color_yellow"
+format = '[[ $symbol $branch ](fg:color_fg0 bg:color_yellow)]($style)'
+
+[git_status]
+style = "bg:color_yellow"
+format = '[[($all_status$ahead_behind )](fg:color_fg0 bg:color_yellow)]($style)'
+
+[nodejs]
+symbol = ""
+style = "bg:color_dkblue"
+format = '[[ $symbol( $version) ](fg:color_dkblue bg:color_orange)]($style)'
+
+[c]
+symbol = " "
+style = "bg:color_dkblue"
+format = '[[ $symbol( $version) ](fg:color_dkblue bg:color_orange)]($style)'
+
+[cpp]
+symbol = " "
+style = "bg:color_dkblue"
+format = '[[ $symbol( $version) ](fg:color_dkblue bg:color_orange)]($style)'
+
+[rust]
+symbol = ""
+style = "bg:color_dkblue"
+format = '[[ $symbol( $version) ](fg:color_dkblue bg:color_orange)]($style)'
+
+[golang]
+symbol = ""
+style = "bg:color_dkblue"
+format = '[[ $symbol( $version) ](fg:color_dkblue bg:color_orange)]($style)'
+
+[php]
+symbol = ""
+style = "bg:color_dkblue"
+format = '[[ $symbol( $version) ](fg:color_dkblue bg:color_orange)]($style)'
+
+[java]
+symbol = ""
+style = "bg:color_dkblue"
+format = '[[ $symbol( $version) ](fg:color_dkblue bg:color_orange)]($style)'
+
+[kotlin]
+symbol = ""
+style = "bg:color_dkblue"
+format = '[[ $symbol( $version) ](fg:color_dkblue bg:color_orange)]($style)'
+
+[haskell]
+symbol = ""
+style = "bg:color_orange"
+format = '[[ $symbol( $version) ](fg:color_dkblue bg:color_orange)]($style)'
+
+[python]
+symbol = ""
+style = "bg:color_orange"
+format = '[[ $symbol( $version) ](fg:color_dkblue bg:color_orange)]($style)'
+
+[docker_context]
+symbol = ""
+style = "bg:color_dkblue"
+format = '[[ $symbol( $context) ](fg:#83a598 bg:color_bg3)]($style)'
+
+[conda]
+style = "bg:color_dkblue"
+format = '[[ $symbol( $environment) ](fg:#83a598 bg:color_bg3)]($style)'
+
+[pixi]
+style = "bg:color_dkblue"
+format = '[[ $symbol( $version)( $environment) ](fg:color_fg0 bg:color_bg3)]($style)'
+
+[time]
+disabled = false
+time_format = "%l:%M %p"
+style = "bg:color_dkblue"
+format = '[[  $time ](fg:color_green bg:color_bg3)]($style)'
+
+[line_break]
+disabled = false
+
+[character]
+disabled = false
+success_symbol = '[🦇 ❯](bold fg:color_green)'
+error_symbol = '[⚰️ ✗](bold fg:color_red)'
+

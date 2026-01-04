@@ -259,11 +259,42 @@ EOF
   echo "b" > "${HOME}/.config/waybar/themes/shared/config.jsonc"
   echo "b" > "${HOME}/.config/waybar/themes/shared/style.css"
 
+  mkdir -p "${HOME}/.config/theme-manager"
+  cat > "${HOME}/.config/theme-manager/config" <<EOF
+WAYBAR_APPLY_MODE="copy"
+EOF
+
   export THEME_MANAGER_SKIP_APPS=
   run "${BIN}" set theme-a -w shared
   [ "$status" -eq 0 ]
   [ -f "${HOME}/.config/waybar/config.jsonc" ]
   [[ "$(cat "${HOME}/.config/waybar/config.jsonc")" == "b" ]]
+}
+
+@test "exec waybar mode uses tmplus-restart-waybar with paths" {
+  mkdir -p "${HOME}/.config/omarchy/themes/theme-a/waybar-theme"
+  echo "a" > "${HOME}/.config/omarchy/themes/theme-a/waybar-theme/config.jsonc"
+  echo "a" > "${HOME}/.config/omarchy/themes/theme-a/waybar-theme/style.css"
+
+  mkdir -p "${HOME}/.config/theme-manager"
+  cat > "${HOME}/.config/theme-manager/config" <<EOF
+DEFAULT_WAYBAR_MODE="auto"
+WAYBAR_APPLY_MODE="exec"
+EOF
+
+  cat > "${BATS_TEST_TMPDIR}/bin/tmplus-restart-waybar" <<'SCRIPT'
+#!/usr/bin/env bash
+echo "$@" > "${BATS_TEST_TMPDIR}/waybar-restart-args"
+SCRIPT
+  chmod +x "${BATS_TEST_TMPDIR}/bin/tmplus-restart-waybar"
+
+  export THEME_MANAGER_SKIP_APPS=
+  run "${BIN}" set theme-a -w
+  [ "$status" -eq 0 ]
+  [ -f "${BATS_TEST_TMPDIR}/waybar-restart-args" ]
+  [[ "$(cat "${BATS_TEST_TMPDIR}/waybar-restart-args")" == *"-c ${HOME}/.config/omarchy/themes/theme-a/waybar-theme/config.jsonc"* ]]
+  [[ "$(cat "${BATS_TEST_TMPDIR}/waybar-restart-args")" == *"-s ${HOME}/.config/omarchy/themes/theme-a/waybar-theme/style.css"* ]]
+  [ ! -f "${HOME}/.config/waybar/config.jsonc" ]
 }
 
 @test "remove refuses to delete the only theme" {

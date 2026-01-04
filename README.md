@@ -50,7 +50,7 @@ Quiet mode:
 - `-q` suppresses most external output.
 
 **`browse`**  
-Pick a theme in a full‑screen list. If `preview.png` exists in the theme folder it will show on the right; otherwise it falls back to the first image in `backgrounds/`.  
+Pick a theme in a full‑screen list. If `preview.png` (case-insensitive) exists in the theme folder it will show on the right; otherwise it falls back to `theme.png` (case-insensitive) or the first image in `backgrounds/`.  
 Then choose Waybar (default, theme, or named), then Starship (default, preset, or user theme).
 
 **`next` / `current` / `bg-next`**  
@@ -79,12 +79,16 @@ Two ways to apply Waybar:
 Behavior:
 - `-w` with no name uses the theme’s `waybar-theme/` if present.
 - `-w <name>` uses the shared Waybar theme.
-- Files are copied into `~/.config/waybar/` (no backups).
-- Waybar is restarted after apply.
+- Files are copied into `~/.config/waybar/` (no backups) when `WAYBAR_APPLY_MODE="copy"` or when exec mode falls back.
+- Waybar is restarted after apply in both modes.
 
 Notes:
-- If a theme has `waybar-theme/preview.png`, the browse screen shows it.
+- If a theme has `waybar-theme/preview.png` (or `preview.PNG`), the browse screen shows it.
+- Theme previews also fall back to `theme.png` (case-insensitive) in the theme root.
 - If there is no preview, the browser falls back to the first image in `backgrounds/`.
+- Optional helper: `extras/omarchy/tmplus-restart-waybar` restarts Waybar with `-c/--config` and `-s/--style` support.
+- `WAYBAR_APPLY_MODE="exec"` (default) uses `tmplus-restart-waybar` to restart Waybar with explicit config/style paths.
+- If the helper is not found, Theme Manager+ falls back to copy mode with a warning.
 
 ### Starship
 Theme Manager Plus can apply Starship prompt configs after a theme switch.
@@ -92,13 +96,16 @@ Theme Manager Plus can apply Starship prompt configs after a theme switch.
 Two sources are supported:
 - Starship presets: `starship preset <name>`
 - User themes: `~/.config/starship-themes/<name>.toml`
+- Theme-specific: `starship.yaml` inside the selected theme directory.
 
 Behavior:
 - Defaults are controlled via config (see below).
 - `browse` lets you pick a Starship preset or user theme alongside the theme selection.
+- User themes appear in the picker when they exist as `*.toml` in `~/.config/starship-themes/`.
 - The active config is written to `~/.config/starship.toml`.
 - `install.sh` ensures `~/.config/starship-themes/` exists for user themes.
 - Preset names can be listed with `starship preset --list`.
+- Example themes are available in `extras/starship-themes/` (copy into `~/.config/starship-themes/`).
 
 ## Omarchy Compatibility
 This tool calls Omarchy’s scripts to stay compatible. It runs:
@@ -124,6 +131,8 @@ Keys (all optional):
 - `THEME_ROOT_DIR`, `CURRENT_THEME_LINK`
 - `OMARCHY_BIN_DIR`
 - `WAYBAR_DIR`, `WAYBAR_THEMES_DIR`
+- `WAYBAR_APPLY_MODE` (`copy` or `exec`)
+- `WAYBAR_RESTART_CMD` (optional override when `WAYBAR_APPLY_MODE="exec"`)
 - `DEFAULT_WAYBAR_MODE` (`auto` or `named`)
 - `DEFAULT_WAYBAR_NAME`
 - `STARSHIP_CONFIG`, `STARSHIP_THEMES_DIR`
@@ -131,6 +140,8 @@ Keys (all optional):
 - `DEFAULT_STARSHIP_PRESET`
 - `DEFAULT_STARSHIP_NAME`
 - `QUIET_MODE_DEFAULT` (`1` to enable quiet mode by default)
+
+Precedence order: CLI flags > env vars > local config > user config > defaults.
 
 Use `./bin/theme-manager print-config` to see resolved values.
 
@@ -167,7 +178,7 @@ hyprctl reload
 - “theme not found” → check spelling or `THEME_ROOT_DIR`.
 - “omarchy-* not found” → ensure Omarchy scripts are in PATH or set `OMARCHY_BIN_DIR`.
 - No Waybar change → confirm `waybar-theme/` files or `~/.config/waybar/themes/<name>/`.
-- Browse preview missing → check `preview.png` or `backgrounds/` in the theme folder.
+- Browse preview missing → check `preview.png`, `theme.png`, or `backgrounds/` in the theme folder.
 - Odd warnings from browsers, GTK, or Wayland → usually safe to ignore; use `-q` to quiet them.
 
 ## Testing

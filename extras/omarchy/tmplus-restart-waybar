@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+config_path=""
+style_path=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -c|--config)
+      config_path="${2:-}"
+      shift 2
+      ;;
+    -s|--style)
+      style_path="${2:-}"
+      shift 2
+      ;;
+    --config=*)
+      config_path="${1#--config=}"
+      shift
+      ;;
+    --style=*)
+      style_path="${1#--style=}"
+      shift
+      ;;
+    *)
+      echo "usage: tmplus-restart-waybar [-c|--config <path>] [-s|--style <path>]" >&2
+      exit 2
+      ;;
+  esac
+done
+
+cmd=(waybar)
+if [[ -n "${config_path}" ]]; then
+  cmd+=(-c "${config_path}")
+fi
+if [[ -n "${style_path}" ]]; then
+  cmd+=(-s "${style_path}")
+fi
+
+pkill -x waybar >/dev/null 2>&1 || true
+setsid uwsm-app -- "${cmd[@]}" >/dev/null 2>&1 &

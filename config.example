@@ -1,6 +1,8 @@
 # theme-manager config (copy to ~/.config/theme-manager/config or ./.theme-manager.conf)
 # Lines beginning with # are comments. Values are KEY=VALUE.
 
+# Precedence: CLI flags > env vars > local config > user config > defaults.
+
 # Root directory containing Omarchy themes.
 THEME_ROOT_DIR="$HOME/.config/omarchy/themes"
 
@@ -15,6 +17,14 @@ WAYBAR_DIR="$HOME/.config/waybar"
 
 # Waybar themes directory (named theme folders live here).
 WAYBAR_THEMES_DIR="$HOME/.config/waybar/themes"
+
+# Waybar apply mode:
+# - "copy" → copy config/style into WAYBAR_DIR and restart Waybar
+# - "exec" → restart Waybar with -c/-s flags (uses tmplus-restart-waybar; falls back to copy if missing)
+WAYBAR_APPLY_MODE="exec"
+
+# Optional override for Waybar restart command (used when WAYBAR_APPLY_MODE="exec").
+# WAYBAR_RESTART_CMD="tmplus-restart-waybar"
 
 # Starship config file (active config lives here).
 STARSHIP_CONFIG="$HOME/.config/starship.toml"

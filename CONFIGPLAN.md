@@ -20,6 +20,8 @@
 - [x] `OMARCHY_BIN_DIR` (optional; used to prepend PATH)
 - [x] `WAYBAR_DIR` (default: `~/.config/waybar`)
 - [x] `WAYBAR_THEMES_DIR` (default: `~/.config/waybar/themes`)
+- [x] `WAYBAR_APPLY_MODE` (`copy` or `exec`)
+- [x] `WAYBAR_RESTART_CMD` (optional; override restart command when `exec`)
 - [x] `DEFAULT_WAYBAR_MODE` (`auto` or `named`)
 - [x] `DEFAULT_WAYBAR_NAME` (used when mode is `named`)
 - [x] `STARSHIP_CONFIG` (default: `~/.config/starship.toml`)
