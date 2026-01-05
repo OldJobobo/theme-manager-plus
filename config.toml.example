@@ -1,6 +1,7 @@
 [paths]
 # theme_root_dir = "~/.config/omarchy/themes"
 # current_theme_link = "~/.config/omarchy/current/theme"
+# current_background_link = "~/.config/omarchy/current/background"
 # omarchy_bin_dir = "~/.local/share/omarchy/bin"
 # waybar_dir = "~/.config/waybar"
 # waybar_themes_dir = "~/.config/waybar/themes"
@@ -20,3 +21,9 @@
 
 [behavior]
 # quiet_default = false
+# awww_transition = true
+# awww_transition_type = "wipe"
+# awww_transition_duration = 2.0
+# awww_transition_angle = 45
+# awww_transition_fps = 60
+# awww_auto_start = false

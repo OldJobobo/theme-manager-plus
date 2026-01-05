@@ -6,18 +6,22 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Text};
-use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
+use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap};
 use ratatui::Terminal;
 use std::fs;
 use std::io::{stdout, Stdout};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
-use tempfile::TempDir;
 use ansi_to_tui::IntoText;
 use ratatui_core::layout::Alignment as CoreAlignment;
 use ratatui_core::style::{Color as CoreColor, Modifier as CoreModifier, Style as CoreStyle};
 use ratatui_core::text::{Line as CoreLine, Span as CoreSpan, Text as CoreText};
+use syntect::easy::HighlightLines;
+use syntect::highlighting::ThemeSet;
+use syntect::parsing::SyntaxSet;
+use syntect::util::as_24_bit_terminal_escaped;
+use tempfile::TempDir;
 
 use crate::config::ResolvedConfig;
 use crate::paths::title_case_theme;
@@ -104,6 +108,13 @@ impl PreviewBackend {
 
   fn text_preview(&self, path: Option<&Path>, rect: Rect) -> Text<'_> {
     match self.kind {
+      PreviewBackendKind::Kitty => {
+        if path.is_some() {
+          Text::from("")
+        } else {
+          Text::from("No preview available.")
+        }
+      }
       PreviewBackendKind::Chafa => {
         if let Some(path) = path {
           let size = format!("{}x{}", rect.width.max(1), rect.height.max(1));
@@ -155,7 +166,22 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
     .collect();
 
   let backend = PreviewBackend::detect();
-  let selected_theme = match select_list("Select theme", &theme_items, &backend)? {
+  let selected_theme = match select_list_with_previews(
+    "Select theme",
+    &theme_items,
+    &backend,
+    |idx| {
+      let theme_path = config.theme_root_dir.join(&theme_items[idx].value);
+      load_code_preview(
+        "hyprland.conf",
+        theme_path.join("hyprland.conf"),
+        "conf",
+      )
+    },
+    |idx| theme_items[idx].preview.clone(),
+    "Image Preview",
+    |_idx| None,
+  )? {
     Some(index) => theme_items[index].value.clone(),
     None => return Ok(None),
   };
@@ -165,7 +191,15 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
   let waybar_selection = match build_waybar_options(config, &theme_path)? {
     SelectionOptions::UseDefaults => WaybarSelection::UseDefaults,
     SelectionOptions::Items(items) => {
-      let choice = match select_list("Select Waybar", &items, &backend)? {
+      let choice = match select_list_with_previews(
+        "Select Waybar",
+        &items,
+        &backend,
+        |idx| build_waybar_code_preview(config, &theme_path, &items[idx]),
+        |idx| items[idx].preview.clone(),
+        "Image Preview",
+        |_idx| None,
+      )? {
         Some(index) => items[index].clone(),
         None => return Ok(None),
       };
@@ -180,7 +214,15 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
   let starship_selection = match build_starship_options(config, &theme_path)? {
     StarshipOptions::UseDefaults => StarshipSelection::UseDefaults,
     StarshipOptions::Items(items) => {
-      let choice = match select_starship_list("Select Starship", &items, &backend, &theme_path, config)? {
+      let choice = match select_list_with_previews(
+        "Select Starship",
+        &items,
+        &backend,
+        |idx| build_starship_code_preview(config, &theme_path, &items[idx]),
+        |_idx| None,
+        "Prompt Preview",
+        |idx| Some(build_starship_prompt_preview(config, &theme_path, &items[idx])),
+      )? {
         Some(index) => items[index].clone(),
         None => return Ok(None),
       };
@@ -315,96 +357,347 @@ fn build_starship_options(config: &ResolvedConfig, theme_path: &Path) -> Result<
   Ok(StarshipOptions::Items(items))
 }
 
-fn select_list(title: &str, items: &[impl ItemView], backend: &PreviewBackend) -> Result<Option<usize>> {
-  let mut terminal = setup_terminal()?;
-  let mut state = ListState::default();
-  state.select(Some(0));
-  let mut last_preview = None::<PathBuf>;
-
-  loop {
-    terminal.draw(|frame| {
-      let size = frame.area();
-      let chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(40), Constraint::Percentage(60)].as_ref())
-        .split(size);
-
-      let list_items: Vec<ListItem> = items
-        .iter()
-        .map(|item| ListItem::new(Line::from(item.label())))
-        .collect();
-      let list = List::new(list_items)
-        .block(Block::default().title(title).borders(Borders::ALL))
-        .highlight_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
-        .highlight_symbol(">> ");
-      frame.render_stateful_widget(list, chunks[0], &mut state);
-
-      let preview_path = state
-        .selected()
-        .and_then(|idx| items.get(idx))
-        .and_then(|item| item.preview_path().cloned());
-
-      if preview_path != last_preview {
-        backend.render(preview_path.as_deref(), chunks[1]);
-        last_preview = preview_path.clone();
-      }
-
-      let preview_text = backend.text_preview(preview_path.as_deref(), chunks[1]);
-      let preview = Paragraph::new(preview_text)
-        .block(Block::default().title("Preview").borders(Borders::ALL));
-      frame.render_widget(preview, chunks[1]);
-    })?;
-
-    if event::poll(Duration::from_millis(200))? {
-      if let Event::Key(key) = event::read()? {
-        match key.code {
-          KeyCode::Char('q') | KeyCode::Esc => {
-            cleanup_terminal(&mut terminal)?;
-            return Ok(None);
-          }
-          KeyCode::Enter => {
-            let selected = state.selected().unwrap_or(0);
-            cleanup_terminal(&mut terminal)?;
-            return Ok(Some(selected));
-          }
-          KeyCode::Up | KeyCode::Char('k') => {
-            let new_index = previous_index(state.selected(), items.len());
-            state.select(Some(new_index));
-          }
-          KeyCode::Down | KeyCode::Char('j') => {
-            let new_index = next_index(state.selected(), items.len());
-            state.select(Some(new_index));
-          }
-          KeyCode::Home => state.select(Some(0)),
-          KeyCode::End => state.select(Some(items.len().saturating_sub(1))),
-          _ => {}
-        }
-      }
+fn build_waybar_code_preview(
+  config: &ResolvedConfig,
+  theme_path: &Path,
+  item: &LabeledItem,
+) -> Text<'static> {
+  match item.kind.as_str() {
+    "default" => Text::from("Using Omarchy default Waybar config."),
+    "theme" => {
+      let base = theme_path.join("waybar-theme");
+      let parts = vec![
+        ("config.jsonc", base.join("config.jsonc"), "json"),
+        ("style.css", base.join("style.css"), "css"),
+      ];
+      load_multi_code_preview(&parts)
+    }
+    _ => {
+      let base = config.waybar_themes_dir.join(&item.value);
+      let parts = vec![
+        ("config.jsonc", base.join("config.jsonc"), "json"),
+        ("style.css", base.join("style.css"), "css"),
+      ];
+      load_multi_code_preview(&parts)
     }
   }
 }
 
-fn select_starship_list(
-  title: &str,
-  items: &[LabeledItem],
-  _backend: &PreviewBackend,
-  theme_path: &Path,
+fn build_starship_code_preview(
   config: &ResolvedConfig,
+  theme_path: &Path,
+  item: &LabeledItem,
+) -> Text<'static> {
+  match item.kind.as_str() {
+    "default" => Text::from("No Starship config change."),
+    "theme" => load_code_preview(
+      "starship.yaml",
+      theme_path.join("starship.yaml"),
+      "yaml",
+    ),
+    "preset" => {
+      let preset = item.value.as_str();
+      let output = Command::new("starship")
+        .args(["preset", preset])
+        .output();
+      let output = match output {
+        Ok(output) if output.status.success() => output.stdout,
+        _ => return Text::from(format!("Failed to load preset: {preset}")),
+      };
+      load_code_preview_from_string("preset.toml", &String::from_utf8_lossy(&output), "toml")
+    }
+    _ => load_code_preview(
+      &format!("{}.toml", item.value),
+      config
+        .starship_themes_dir
+        .join(format!("{}.toml", item.value)),
+      "toml",
+    ),
+  }
+}
+
+fn build_starship_prompt_preview(
+  config: &ResolvedConfig,
+  theme_path: &Path,
+  item: &LabeledItem,
+) -> Text<'static> {
+  render_starship_prompt_preview(config, theme_path, item)
+}
+
+fn load_multi_code_preview(parts: &[(&str, PathBuf, &str)]) -> Text<'static> {
+  let mut combined = Text::from("");
+  let mut first = true;
+  for (title, path, syntax) in parts {
+    if !first {
+      combined.lines.push(Line::from(""));
+    }
+    first = false;
+    let mut header = Text::from(vec![
+      Line::from(format!("=== {} ===", title)),
+      Line::from(""),
+    ]);
+    combined.lines.append(&mut header.lines);
+    let block = load_code_preview(title, path.clone(), syntax);
+    combined.lines.extend(block.lines);
+  }
+  combined
+}
+
+fn load_code_preview(title: &str, path: PathBuf, syntax: &str) -> Text<'static> {
+  if !path.is_file() {
+    return Text::from(format!("Missing {} at {}", title, path.to_string_lossy()));
+  }
+  match fs::read_to_string(&path) {
+    Ok(content) => load_code_preview_from_string(title, &content, syntax),
+    Err(_) => Text::from(format!("Failed to read {}", title)),
+  }
+}
+
+fn load_code_preview_from_string(title: &str, content: &str, syntax: &str) -> Text<'static> {
+  let mut lines = Vec::new();
+  lines.push(Line::from(format!("=== {} ===", title)));
+  lines.push(Line::from(""));
+  let highlighted = highlight_code(content, syntax);
+  lines.extend(highlighted.lines);
+  Text::from(lines)
+}
+
+fn highlight_code(content: &str, syntax: &str) -> Text<'static> {
+  let ps = SyntaxSet::load_defaults_newlines();
+  let ts = ThemeSet::load_defaults();
+  let theme = ts
+    .themes
+    .get("base16-ocean.dark")
+    .or_else(|| ts.themes.values().next())
+    .expect("theme");
+  let syntax_ref = ps
+    .find_syntax_by_extension(syntax)
+    .unwrap_or_else(|| ps.find_syntax_plain_text());
+  let mut h = HighlightLines::new(syntax_ref, theme);
+  let mut out = String::new();
+  for line in content.lines() {
+    let ranges = h.highlight_line(line, &ps).unwrap_or_default();
+    out.push_str(&as_24_bit_terminal_escaped(&ranges[..], false));
+    out.push('\n');
+  }
+  match out.as_bytes().into_text() {
+    Ok(text) => convert_text(text),
+    Err(_) => Text::from(content.to_string()),
+  }
+}
+
+fn render_starship_prompt_preview(
+  config: &ResolvedConfig,
+  theme_path: &Path,
+  item: &LabeledItem,
+) -> Text<'static> {
+  if item.kind.as_str() == "default" {
+    return Text::from("No Starship config change.\n\nThe current Omarchy theme prompt will be used.");
+  }
+
+  if !command_exists("starship") {
+    return Text::from("Starship not found in PATH.");
+  }
+
+  let temp_dir = match TempDir::new() {
+    Ok(dir) => dir,
+    Err(_) => return Text::from("Failed to create preview temp dir."),
+  };
+  let preview_root = temp_dir.path();
+  let _ = Command::new("git").arg("init").arg("-q").current_dir(preview_root).status();
+  let _ = fs::write(preview_root.join("README.md"), "mock");
+  let _ = Command::new("git")
+    .arg("add")
+    .arg(".")
+    .current_dir(preview_root)
+    .status();
+
+  let config_path = match item.kind.as_str() {
+    "theme" => {
+      let path = theme_path.join("starship.yaml");
+      if !path.is_file() {
+        return Text::from("Theme-specific Starship config not found.");
+      }
+      path
+    }
+    "preset" => {
+      let preset_name = item.value.as_str();
+      let output = Command::new("starship")
+        .args(["preset", preset_name])
+        .output();
+      let output = match output {
+        Ok(output) if output.status.success() => output,
+        _ => return Text::from(format!("Failed to load preset: {preset_name}")),
+      };
+      let preset_path = preview_root.join("preset.toml");
+      if fs::write(&preset_path, output.stdout).is_err() {
+        return Text::from("Failed to write preset file.");
+      }
+      preset_path
+    }
+    "named" => {
+      let path = config
+        .starship_themes_dir
+        .join(format!("{}.toml", item.value));
+      if !path.is_file() {
+        return Text::from(format!(
+          "Theme config not found: {}",
+          path.to_string_lossy()
+        ));
+      }
+      path
+    }
+    _ => {
+      return Text::from("Unknown selection.");
+    }
+  };
+
+  let width = 100u16;
+  let width_str = width.to_string();
+  let prompt_output = Command::new("starship")
+    .args([
+      "prompt",
+      "--path",
+      preview_root.to_string_lossy().as_ref(),
+      "--terminal-width",
+      &width_str,
+      "--jobs",
+      "0",
+    ])
+    .env("STARSHIP_CONFIG", &config_path)
+    .output();
+
+  let prompt = match prompt_output {
+    Ok(output) if output.status.success() => String::from_utf8_lossy(&output.stdout).to_string(),
+    _ => "Failed to render prompt.".to_string(),
+  };
+
+  let right_output = Command::new("starship")
+    .args([
+      "prompt",
+      "--right",
+      "--path",
+      preview_root.to_string_lossy().as_ref(),
+      "--terminal-width",
+      &width_str,
+    ])
+    .env("STARSHIP_CONFIG", &config_path)
+    .output();
+
+  let right_prompt = match right_output {
+    Ok(output) if output.status.success() => String::from_utf8_lossy(&output.stdout).to_string(),
+    _ => String::new(),
+  };
+
+  let mut lines: Vec<Line<'static>> = Vec::new();
+  lines.push(Line::from("=== Starship Prompt Preview ==="));
+  lines.push(Line::from(""));
+
+  let left_lines = trim_empty_lines(parse_ansi_lines(&strip_prompt_markers(&prompt)));
+  let right_trimmed = strip_prompt_markers(right_prompt.trim());
+  if !right_trimmed.is_empty() {
+    let right_lines = trim_empty_lines(parse_ansi_lines(&right_trimmed));
+    lines.extend(combine_prompt_lines(&left_lines, &right_lines, width));
+  } else {
+    lines.extend(left_lines);
+  }
+
+  Text::from(lines)
+}
+
+fn strip_prompt_markers(input: &str) -> String {
+  input.replace("\\[", "").replace("\\]", "")
+}
+
+fn parse_ansi_lines(input: &str) -> Vec<Line<'static>> {
+  match input.as_bytes().into_text() {
+    Ok(text) => convert_text(text).lines,
+    Err(_) => input
+      .lines()
+      .map(|line| Line::from(line.to_string()))
+      .collect(),
+  }
+}
+
+fn combine_prompt_lines(
+  left_lines: &[Line<'static>],
+  right_lines: &[Line<'static>],
+  width: u16,
+) -> Vec<Line<'static>> {
+  if left_lines.is_empty() {
+    return right_lines.to_vec();
+  }
+  if right_lines.is_empty() {
+    return left_lines.to_vec();
+  }
+
+  let mut out = Vec::new();
+  let total_width = width as usize;
+
+  if left_lines.len() > 1 {
+    out.extend_from_slice(&left_lines[..left_lines.len() - 1]);
+  }
+
+  let left_last = left_lines[left_lines.len() - 1].clone();
+  let right_first = right_lines[0].clone();
+  let left_width = left_last.width();
+  let right_width = right_first.width();
+  let spacer_width = total_width.saturating_sub(left_width + right_width);
+
+  let mut spans = left_last.spans;
+  if spacer_width > 0 {
+    spans.push(ratatui::text::Span::raw(" ".repeat(spacer_width)));
+  }
+  spans.extend(right_first.spans);
+  out.push(Line::from(spans));
+
+  if right_lines.len() > 1 {
+    out.extend_from_slice(&right_lines[1..]);
+  }
+  out
+}
+
+fn trim_empty_lines(mut lines: Vec<Line<'static>>) -> Vec<Line<'static>> {
+  while lines.first().map(|l| l.width() == 0).unwrap_or(false) {
+    lines.remove(0);
+  }
+  while lines.last().map(|l| l.width() == 0).unwrap_or(false) {
+    lines.pop();
+  }
+  lines
+}
+
+fn select_list_with_previews(
+  title: &str,
+  items: &[impl ItemView],
+  backend: &PreviewBackend,
+  code_preview: impl Fn(usize) -> Text<'static>,
+  image_preview: impl Fn(usize) -> Option<PathBuf>,
+  preview_title: &str,
+  preview_text: impl Fn(usize) -> Option<Text<'static>>,
 ) -> Result<Option<usize>> {
   let mut terminal = setup_terminal()?;
   let mut state = ListState::default();
   state.select(Some(0));
-  let mut last_index = None::<usize>;
-  let mut last_width = None::<u16>;
-  let mut last_text = Text::from("Loading preview...");
+  let mut last_preview = None::<PathBuf>;
+  let mut preview_dirty = false;
+  let mut last_code_index = None::<usize>;
+  let mut last_code = Text::from("Loading preview...");
+  let mut last_preview_index = None::<usize>;
+  let mut last_preview_text = Text::from("");
 
   loop {
     terminal.draw(|frame| {
       let size = frame.area();
       let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Percentage(65), Constraint::Percentage(35)].as_ref())
+        .split(size);
+      let top_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(40), Constraint::Percentage(60)].as_ref())
-        .split(size);
+        .split(chunks[0]);
+      let image_area = inner_rect(chunks[1]);
 
       let list_items: Vec<ListItem> = items
         .iter()
@@ -414,19 +707,51 @@ fn select_starship_list(
         .block(Block::default().title(title).borders(Borders::ALL))
         .highlight_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
         .highlight_symbol(">> ");
-      frame.render_stateful_widget(list, chunks[0], &mut state);
+      frame.render_stateful_widget(list, top_chunks[0], &mut state);
+
+      let preview_path = state
+        .selected()
+        .and_then(|idx| items.get(idx))
+        .and_then(|_item| image_preview(state.selected().unwrap_or(0)));
 
       let selected = state.selected().unwrap_or(0);
-      let width = chunks[1].width.max(40);
-      if Some(selected) != last_index || Some(width) != last_width {
-        let choice = &items[selected];
-        last_text = render_starship_preview(choice, theme_path, config, width);
-        last_index = Some(selected);
-        last_width = Some(width);
+      if Some(selected) != last_code_index {
+        last_code = code_preview(selected);
+        last_code_index = Some(selected);
       }
 
-      let preview = Paragraph::new(last_text.clone())
-        .block(Block::default().title("Preview").borders(Borders::ALL));
+      let code = Paragraph::new(last_code.clone())
+        .block(Block::default().title("Code Preview").borders(Borders::ALL))
+        .wrap(Wrap { trim: false });
+      frame.render_widget(code, top_chunks[1]);
+
+      if Some(selected) != last_preview_index {
+        if let Some(text) = preview_text(selected) {
+          last_preview_text = text;
+          last_preview = None;
+          preview_dirty = false;
+        } else {
+          last_preview_text = Text::from("");
+          if last_preview != preview_path {
+            last_preview = preview_path.clone();
+            preview_dirty = true;
+          }
+        }
+        last_preview_index = Some(selected);
+      }
+
+      if preview_dirty && last_preview.is_some() {
+        backend.render(last_preview.as_deref(), image_area);
+        preview_dirty = false;
+      }
+
+      let preview_text_rendered = if last_preview_text.lines.is_empty() {
+        backend.text_preview(last_preview.as_deref(), image_area)
+      } else {
+        last_preview_text.clone()
+      };
+      let preview = Paragraph::new(preview_text_rendered)
+        .block(Block::default().title(preview_title).borders(Borders::ALL));
       frame.render_widget(preview, chunks[1]);
     })?;
 
@@ -472,6 +797,16 @@ fn cleanup_terminal(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result
   execute!(terminal.backend_mut(), terminal::LeaveAlternateScreen)?;
   terminal.show_cursor()?;
   Ok(())
+}
+
+fn inner_rect(rect: Rect) -> Rect {
+  let pad = 2;
+  Rect {
+    x: rect.x.saturating_add(pad),
+    y: rect.y.saturating_add(pad),
+    width: rect.width.saturating_sub(pad * 2),
+    height: rect.height.saturating_sub(pad * 2),
+  }
 }
 
 fn next_index(current: Option<usize>, len: usize) -> usize {
@@ -581,191 +916,6 @@ fn list_starship_themes(dir: &Path) -> Result<Vec<String>> {
   Ok(themes)
 }
 
-fn render_starship_preview(
-  choice: &LabeledItem,
-  theme_path: &Path,
-  config: &ResolvedConfig,
-  width: u16,
-) -> Text<'static> {
-  match choice.kind.as_str() {
-    "default" => {
-      return Text::from("No Starship config change\n\nThe current Omarchy theme prompt will be used.");
-    }
-    _ => {}
-  }
-
-  if !command_exists("starship") {
-    return Text::from("Starship not found in PATH.");
-  }
-
-  let temp_dir = match TempDir::new() {
-    Ok(dir) => dir,
-    Err(_) => return Text::from("Failed to create preview temp dir."),
-  };
-  let preview_root = temp_dir.path();
-  let _ = Command::new("git").arg("init").arg("-q").current_dir(preview_root).status();
-  let _ = fs::write(preview_root.join("README.md"), "mock");
-  let _ = Command::new("git")
-    .arg("add")
-    .arg(".")
-    .current_dir(preview_root)
-    .status();
-
-  let config_path = match choice.kind.as_str() {
-    "theme" => {
-      let path = theme_path.join("starship.yaml");
-      if !path.is_file() {
-        return Text::from("Theme-specific Starship config not found.");
-      }
-      path
-    }
-    "preset" => {
-      let preset_name = choice.value.as_str();
-      let output = Command::new("starship")
-        .args(["preset", preset_name])
-        .output();
-      let output = match output {
-        Ok(output) if output.status.success() => output,
-        _ => return Text::from(format!("Failed to load preset: {preset_name}")),
-      };
-      let preset_path = preview_root.join("preset.toml");
-      if fs::write(&preset_path, output.stdout).is_err() {
-        return Text::from("Failed to write preset file.");
-      }
-      preset_path
-    }
-    "named" => {
-      let path = config.starship_themes_dir.join(format!("{}.toml", choice.value));
-      if !path.is_file() {
-        return Text::from(format!(
-          "Theme config not found: {}",
-          path.to_string_lossy()
-        ));
-      }
-      path
-    }
-    _ => {
-      return Text::from("Unknown selection.");
-    }
-  };
-
-  let width_str = width.to_string();
-  let prompt_output = Command::new("starship")
-    .args([
-      "prompt",
-      "--path",
-      preview_root.to_string_lossy().as_ref(),
-      "--terminal-width",
-      &width_str,
-      "--jobs",
-      "0",
-    ])
-    .env("STARSHIP_CONFIG", &config_path)
-    .output();
-
-  let prompt = match prompt_output {
-    Ok(output) if output.status.success() => String::from_utf8_lossy(&output.stdout).to_string(),
-    _ => "Failed to render prompt.".to_string(),
-  };
-
-  let right_output = Command::new("starship")
-    .args([
-      "prompt",
-      "--right",
-      "--path",
-      preview_root.to_string_lossy().as_ref(),
-      "--terminal-width",
-      &width_str,
-    ])
-    .env("STARSHIP_CONFIG", &config_path)
-    .output();
-
-  let right_prompt = match right_output {
-    Ok(output) if output.status.success() => String::from_utf8_lossy(&output.stdout).to_string(),
-    _ => String::new(),
-  };
-
-  let mut lines: Vec<Line<'static>> = Vec::new();
-  lines.push(Line::from("=== Starship Prompt Preview ==="));
-  lines.push(Line::from(""));
-
-  let left_lines = trim_empty_lines(parse_ansi_lines(&strip_prompt_markers(&prompt)));
-  let right_trimmed = strip_prompt_markers(right_prompt.trim());
-  if !right_trimmed.is_empty() {
-    let right_lines = trim_empty_lines(parse_ansi_lines(&right_trimmed));
-    lines.extend(combine_prompt_lines(&left_lines, &right_lines, width));
-  } else {
-    lines.extend(left_lines);
-  }
-
-  lines.push(Line::from(""));
-  lines.push(Line::from("---"));
-  lines.push(Line::from(format!("Config: {}", choice.label)));
-
-  Text::from(lines)
-}
-
-fn strip_prompt_markers(input: &str) -> String {
-  input.replace("\\[", "").replace("\\]", "")
-}
-
-fn parse_ansi_lines(input: &str) -> Vec<Line<'static>> {
-  match input.as_bytes().into_text() {
-    Ok(text) => convert_text(text).lines,
-    Err(_) => input
-      .lines()
-      .map(|line| Line::from(line.to_string()))
-      .collect(),
-  }
-}
-
-fn combine_prompt_lines(
-  left_lines: &[Line<'static>],
-  right_lines: &[Line<'static>],
-  width: u16,
-) -> Vec<Line<'static>> {
-  if left_lines.is_empty() {
-    return right_lines.to_vec();
-  }
-  if right_lines.is_empty() {
-    return left_lines.to_vec();
-  }
-
-  let mut out = Vec::new();
-  let total_width = width as usize;
-
-  if left_lines.len() > 1 {
-    out.extend_from_slice(&left_lines[..left_lines.len() - 1]);
-  }
-
-  let left_last = left_lines[left_lines.len() - 1].clone();
-  let right_first = right_lines[0].clone();
-  let left_width = left_last.width();
-  let right_width = right_first.width();
-  let spacer_width = total_width.saturating_sub(left_width + right_width);
-
-  let mut spans = left_last.spans;
-  if spacer_width > 0 {
-    spans.push(ratatui::text::Span::raw(" ".repeat(spacer_width)));
-  }
-  spans.extend(right_first.spans);
-  out.push(Line::from(spans));
-
-  if right_lines.len() > 1 {
-    out.extend_from_slice(&right_lines[1..]);
-  }
-  out
-}
-
-fn trim_empty_lines(mut lines: Vec<Line<'static>>) -> Vec<Line<'static>> {
-  while lines.first().map(|l| l.width() == 0).unwrap_or(false) {
-    lines.remove(0);
-  }
-  while lines.last().map(|l| l.width() == 0).unwrap_or(false) {
-    lines.pop();
-  }
-  lines
-}
 
 fn convert_text(text: CoreText<'static>) -> Text<'static> {
   let lines = text
@@ -875,25 +1025,16 @@ fn term_contains(value: &str) -> bool {
 
 trait ItemView {
   fn label(&self) -> String;
-  fn preview_path(&self) -> Option<&PathBuf>;
 }
 
 impl ItemView for OptionItem {
   fn label(&self) -> String {
     self.label.clone()
   }
-
-  fn preview_path(&self) -> Option<&PathBuf> {
-    self.preview.as_ref()
-  }
 }
 
 impl ItemView for LabeledItem {
   fn label(&self) -> String {
     self.label.clone()
-  }
-
-  fn preview_path(&self) -> Option<&PathBuf> {
-    self.preview.as_ref()
   }
 }

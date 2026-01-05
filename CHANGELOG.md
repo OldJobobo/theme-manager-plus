@@ -3,6 +3,11 @@
 All notable changes to this project are documented in this file.
 
 ## Unreleased
+- Added awww-backed wallpaper transitions with theme background cycling, daemon auto-start, and debug logging support.
+- Deferred app restarts until after theme, Waybar, and Starship changes are applied.
+- Reworked browse TUI layout with syntax-highlighted config previews and dedicated image/prompt preview panes.
+- Improved Starship preview rendering and placement in the browse picker.
+- Updated config defaults/docs for new awww behavior and slower transition timing.
 
 ## 0.1.5
 - Improved README flow and Starship documentation details.

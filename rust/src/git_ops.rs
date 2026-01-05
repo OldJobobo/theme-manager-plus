@@ -133,6 +133,7 @@ fn default_command_context<'a>(config: &'a ResolvedConfig) -> CommandContext<'a>
     waybar_mode,
     waybar_name,
     starship_mode,
+    debug_awww: false,
   }
 }
 

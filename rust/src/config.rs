@@ -16,6 +16,7 @@ pub struct FileConfig {
 pub struct PathsConfig {
   pub theme_root_dir: Option<String>,
   pub current_theme_link: Option<String>,
+  pub current_background_link: Option<String>,
   pub omarchy_bin_dir: Option<String>,
   pub waybar_dir: Option<String>,
   pub waybar_themes_dir: Option<String>,
@@ -41,12 +42,19 @@ pub struct StarshipConfig {
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct BehaviorConfig {
   pub quiet_default: Option<bool>,
+  pub awww_transition: Option<bool>,
+  pub awww_transition_type: Option<String>,
+  pub awww_transition_duration: Option<f32>,
+  pub awww_transition_angle: Option<f32>,
+  pub awww_transition_fps: Option<u32>,
+  pub awww_auto_start: Option<bool>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ResolvedConfig {
   pub theme_root_dir: PathBuf,
   pub current_theme_link: PathBuf,
+  pub current_background_link: PathBuf,
   pub omarchy_bin_dir: Option<PathBuf>,
   pub waybar_dir: PathBuf,
   pub waybar_themes_dir: PathBuf,
@@ -60,6 +68,12 @@ pub struct ResolvedConfig {
   pub default_starship_preset: Option<String>,
   pub default_starship_name: Option<String>,
   pub quiet_default: bool,
+  pub awww_transition: bool,
+  pub awww_transition_type: String,
+  pub awww_transition_duration: f32,
+  pub awww_transition_angle: f32,
+  pub awww_transition_fps: u32,
+  pub awww_auto_start: bool,
 }
 
 impl ResolvedConfig {
@@ -83,6 +97,7 @@ impl ResolvedConfig {
   fn defaults(home: &Path) -> Self {
     let theme_root_dir = home.join(".config/omarchy/themes");
     let current_theme_link = home.join(".config/omarchy/current/theme");
+    let current_background_link = home.join(".config/omarchy/current/background");
     let waybar_dir = home.join(".config/waybar");
     let waybar_themes_dir = waybar_dir.join("themes");
     let starship_config = home.join(".config/starship.toml");
@@ -91,6 +106,7 @@ impl ResolvedConfig {
     ResolvedConfig {
       theme_root_dir,
       current_theme_link,
+      current_background_link,
       omarchy_bin_dir: None,
       waybar_dir,
       waybar_themes_dir,
@@ -104,6 +120,12 @@ impl ResolvedConfig {
       default_starship_preset: None,
       default_starship_name: None,
       quiet_default: false,
+      awww_transition: true,
+      awww_transition_type: "wipe".to_string(),
+      awww_transition_duration: 2.0,
+      awww_transition_angle: 45.0,
+      awww_transition_fps: 60,
+      awww_auto_start: false,
     }
   }
 
@@ -114,6 +136,9 @@ impl ResolvedConfig {
       }
       if let Some(val) = &paths.current_theme_link {
         self.current_theme_link = expand_path(val, home);
+      }
+      if let Some(val) = &paths.current_background_link {
+        self.current_background_link = expand_path(val, home);
       }
       if let Some(val) = &paths.omarchy_bin_dir {
         self.omarchy_bin_dir = Some(expand_path(val, home));
@@ -165,6 +190,24 @@ impl ResolvedConfig {
       if let Some(val) = behavior.quiet_default {
         self.quiet_default = val;
       }
+      if let Some(val) = behavior.awww_transition {
+        self.awww_transition = val;
+      }
+      if let Some(val) = &behavior.awww_transition_type {
+        self.awww_transition_type = val.clone();
+      }
+      if let Some(val) = behavior.awww_transition_duration {
+        self.awww_transition_duration = val;
+      }
+      if let Some(val) = behavior.awww_transition_angle {
+        self.awww_transition_angle = val;
+      }
+      if let Some(val) = behavior.awww_transition_fps {
+        self.awww_transition_fps = val;
+      }
+      if let Some(val) = behavior.awww_auto_start {
+        self.awww_auto_start = val;
+      }
     }
   }
 
@@ -174,6 +217,9 @@ impl ResolvedConfig {
     }
     if let Ok(val) = env::var("CURRENT_THEME_LINK") {
       self.current_theme_link = expand_path(&val, home);
+    }
+    if let Ok(val) = env::var("CURRENT_BACKGROUND_LINK") {
+      self.current_background_link = expand_path(&val, home);
     }
     if let Ok(val) = env::var("OMARCHY_BIN_DIR") {
       self.omarchy_bin_dir = Some(expand_path(&val, home));
@@ -218,6 +264,18 @@ impl ResolvedConfig {
     }
     if env::var("QUIET_MODE").is_ok() {
       self.quiet_default = true;
+    }
+    if let Ok(val) = env::var("THEME_MANAGER_AWWW_TRANSITION") {
+      if val == "0" || val.eq_ignore_ascii_case("false") {
+        self.awww_transition = false;
+      } else {
+        self.awww_transition = true;
+      }
+    }
+    if let Ok(val) = env::var("THEME_MANAGER_AWWW_AUTO_START") {
+      if val == "1" || val.eq_ignore_ascii_case("true") {
+        self.awww_auto_start = true;
+      }
     }
     Ok(())
   }
@@ -264,6 +322,10 @@ pub fn print_config(config: &ResolvedConfig) {
   println!(
     "CURRENT_THEME_LINK={}",
     config.current_theme_link.to_string_lossy()
+  );
+  println!(
+    "CURRENT_BACKGROUND_LINK={}",
+    config.current_background_link.to_string_lossy()
   );
   println!(
     "OMARCHY_BIN_DIR={}",
@@ -318,5 +380,20 @@ pub fn print_config(config: &ResolvedConfig) {
   println!(
     "QUIET_MODE={}",
     if config.quiet_default { "1" } else { "" }
+  );
+  println!(
+    "AWWW_TRANSITION={}",
+    if config.awww_transition { "1" } else { "" }
+  );
+  println!("AWWW_TRANSITION_TYPE={}", config.awww_transition_type);
+  println!(
+    "AWWW_TRANSITION_DURATION={}",
+    config.awww_transition_duration
+  );
+  println!("AWWW_TRANSITION_ANGLE={}", config.awww_transition_angle);
+  println!("AWWW_TRANSITION_FPS={}", config.awww_transition_fps);
+  println!(
+    "AWWW_AUTO_START={}",
+    if config.awww_auto_start { "1" } else { "" }
   );
 }

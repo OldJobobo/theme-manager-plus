@@ -2,16 +2,16 @@ use anyhow::{anyhow, Result};
 use std::fs;
 use std::path::Path;
 
-use crate::omarchy;
+use crate::omarchy::{self, RestartCommand};
 use crate::theme_ops::{CommandContext, WaybarMode};
 
-pub fn apply_waybar(ctx: &CommandContext<'_>, theme_dir: &Path) -> Result<()> {
+pub fn prepare_waybar(ctx: &CommandContext<'_>, theme_dir: &Path) -> Result<Option<RestartCommand>> {
   let waybar_dir = match ctx.waybar_mode {
-    WaybarMode::None => return Ok(()),
+    WaybarMode::None => return Ok(None),
     WaybarMode::Auto => theme_dir.join("waybar-theme"),
     WaybarMode::Named => match &ctx.waybar_name {
       Some(name) => ctx.config.waybar_themes_dir.join(name),
-      None => return Ok(()),
+      None => return Ok(None),
     },
   };
 
@@ -22,7 +22,7 @@ pub fn apply_waybar(ctx: &CommandContext<'_>, theme_dir: &Path) -> Result<()> {
         waybar_dir.to_string_lossy()
       );
     }
-    return Ok(());
+    return Ok(None);
   }
 
   let config_path = waybar_dir.join("config.jsonc");
@@ -34,7 +34,7 @@ pub fn apply_waybar(ctx: &CommandContext<'_>, theme_dir: &Path) -> Result<()> {
         waybar_dir.to_string_lossy()
       );
     }
-    return Ok(());
+    return Ok(None);
   }
 
   let apply_mode = ctx.config.waybar_apply_mode.as_str();
@@ -66,16 +66,21 @@ pub fn apply_waybar(ctx: &CommandContext<'_>, theme_dir: &Path) -> Result<()> {
       args.push(config_str);
       args.push("-s".to_string());
       args.push(style_str);
-      let arg_refs: Vec<&str> = args.iter().map(|arg| arg.as_str()).collect();
-      let _ = omarchy::run_command(cmd, &arg_refs, ctx.quiet);
-      return Ok(());
+      return Ok(Some(RestartCommand {
+        cmd: cmd.to_string(),
+        args,
+      }));
     }
   }
 
   apply_copy(ctx, &config_path, &style_path)
 }
 
-fn apply_copy(ctx: &CommandContext<'_>, config_path: &Path, style_path: &Path) -> Result<()> {
+fn apply_copy(
+  ctx: &CommandContext<'_>,
+  config_path: &Path,
+  style_path: &Path,
+) -> Result<Option<RestartCommand>> {
   fs::create_dir_all(&ctx.config.waybar_dir)?;
 
   if !ctx.quiet {
@@ -94,6 +99,8 @@ fn apply_copy(ctx: &CommandContext<'_>, config_path: &Path, style_path: &Path) -
   fs::copy(config_path, dest_config)?;
   fs::copy(style_path, dest_style)?;
 
-  let _ = omarchy::run_optional("omarchy-restart-waybar", &[], ctx.quiet);
-  Ok(())
+  Ok(Some(RestartCommand {
+    cmd: "omarchy-restart-waybar".to_string(),
+    args: Vec::new(),
+  }))
 }

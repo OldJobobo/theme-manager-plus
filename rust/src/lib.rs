@@ -41,6 +41,7 @@ pub fn run(cli: cli::Cli) -> Result<()> {
         waybar_mode,
         waybar_name,
         starship_mode,
+        debug_awww: cli.debug_awww,
       };
       theme_ops::cmd_set(&ctx, &args.theme)?;
     }
@@ -56,6 +57,7 @@ pub fn run(cli: cli::Cli) -> Result<()> {
         waybar_mode,
         waybar_name,
         starship_mode,
+        debug_awww: cli.debug_awww,
       };
       theme_ops::cmd_next(&ctx)?;
     }
@@ -83,6 +85,7 @@ pub fn run(cli: cli::Cli) -> Result<()> {
           waybar_mode,
           waybar_name,
           starship_mode,
+          debug_awww: cli.debug_awww,
         };
         theme_ops::cmd_set(&ctx, &selection.theme)?;
       }

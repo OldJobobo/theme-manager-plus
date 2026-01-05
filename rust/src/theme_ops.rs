@@ -32,6 +32,7 @@ pub struct CommandContext<'a> {
   pub waybar_mode: WaybarMode,
   pub waybar_name: Option<String>,
   pub starship_mode: StarshipMode,
+  pub debug_awww: bool,
 }
 
 pub fn waybar_from_defaults(config: &ResolvedConfig) -> (WaybarMode, Option<String>) {
@@ -91,12 +92,25 @@ pub fn cmd_set(ctx: &CommandContext<'_>, theme_name: &str) -> Result<()> {
     return Err(anyhow!("theme not found: {normalized}"));
   }
 
+  omarchy::ensure_awww_daemon(ctx.config, ctx.quiet);
+
   ensure_parent_dir(&ctx.config.current_theme_link)?;
   replace_symlink(&theme_path, &ctx.config.current_theme_link)?;
 
+  let mut waybar_restart = None;
   if !ctx.skip_apps {
-    omarchy::run_required("omarchy-theme-bg-next", &[], ctx.quiet)?;
-    omarchy::reload_components(ctx.quiet)?;
+    waybar_restart = waybar::prepare_waybar(ctx, &theme_path)?;
+    starship::apply_starship(ctx, &theme_path)?;
+  }
+
+  if !ctx.skip_apps {
+    if ctx.config.awww_transition && omarchy::command_exists("awww") {
+      cycle_background(ctx, &theme_path)?;
+      let _ = omarchy::run_awww_transition(ctx.config, ctx.quiet, ctx.debug_awww);
+    } else {
+      omarchy::run_required("omarchy-theme-bg-next", &[], ctx.quiet)?;
+    }
+    omarchy::reload_components(ctx.quiet, waybar_restart)?;
     omarchy::apply_theme_setters(ctx.quiet)?;
   }
 
@@ -106,11 +120,6 @@ pub fn cmd_set(ctx: &CommandContext<'_>, theme_name: &str) -> Result<()> {
       std::env::var("HOME").unwrap_or_default()
     ));
     let _ = omarchy::run_hook(&hook_path, &[&normalized], ctx.quiet);
-  }
-
-  if !ctx.skip_apps {
-    waybar::apply_waybar(ctx, &theme_path)?;
-    starship::apply_starship(ctx, &theme_path)?;
   }
 
   Ok(())
@@ -225,6 +234,68 @@ fn is_symlink(path: &Path) -> Result<bool> {
     Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(false),
     Err(err) => Err(err.into()),
   }
+}
+
+fn cycle_background(ctx: &CommandContext<'_>, theme_path: &Path) -> Result<()> {
+  let backgrounds_dir = theme_path.join("backgrounds");
+  if !backgrounds_dir.is_dir() {
+    return Ok(());
+  }
+
+  let mut images: Vec<PathBuf> = fs::read_dir(&backgrounds_dir)?
+    .filter_map(|entry| entry.ok().map(|e| e.path()))
+    .filter(|path| {
+      path.is_file()
+        && path
+          .extension()
+          .and_then(|ext| ext.to_str())
+          .map(|ext| {
+            matches!(
+              ext.to_ascii_lowercase().as_str(),
+              "png" | "jpg" | "jpeg" | "webp"
+            )
+          })
+          .unwrap_or(false)
+    })
+    .collect();
+  images.sort();
+  if images.is_empty() {
+    return Ok(());
+  }
+
+  let current_link = &ctx.config.current_background_link;
+  let current_target = if current_link.exists() {
+    if current_link.is_symlink() {
+      Some(crate::paths::resolve_link_target(current_link)?)
+    } else {
+      Some(current_link.to_path_buf())
+    }
+  } else {
+    None
+  };
+
+  let next_index = current_target
+    .as_ref()
+    .and_then(|target| images.iter().position(|img| img == target))
+    .map(|idx| (idx + 1) % images.len())
+    .unwrap_or(0);
+
+  let next_image = &images[next_index];
+  if let Some(parent) = current_link.parent() {
+    fs::create_dir_all(parent)?;
+  }
+  if let Ok(meta) = fs::symlink_metadata(current_link) {
+    if meta.file_type().is_dir() {
+      fs::remove_dir_all(current_link)?;
+    } else {
+      fs::remove_file(current_link)?;
+    }
+  }
+  #[cfg(unix)]
+  {
+    std::os::unix::fs::symlink(next_image, current_link)?;
+  }
+  Ok(())
 }
 
 fn is_broken_symlink(path: &Path) -> Result<bool> {

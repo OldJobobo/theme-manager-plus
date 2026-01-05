@@ -17,6 +17,7 @@
 ## 4) Config Keys (Initial Set)
 - [x] `[paths].theme_root_dir` (default: `~/.config/omarchy/themes`)
 - [x] `[paths].current_theme_link` (default: `~/.config/omarchy/current/theme`)
+- [x] `[paths].current_background_link` (default: `~/.config/omarchy/current/background`)
 - [x] `[paths].omarchy_bin_dir` (optional; prepends PATH)
 - [x] `[paths].waybar_dir` (default: `~/.config/waybar`)
 - [x] `[paths].waybar_themes_dir` (default: `~/.config/waybar/themes`)
@@ -30,6 +31,12 @@
 - [x] `[starship].default_preset` (used when mode is `preset`)
 - [x] `[starship].default_name` (used when mode is `named`)
 - [x] `[behavior].quiet_default` (true/false)
+- [x] `[behavior].awww_transition` (true/false)
+- [x] `[behavior].awww_transition_type` (string)
+- [x] `[behavior].awww_transition_duration` (seconds float)
+- [x] `[behavior].awww_transition_angle` (degrees float)
+- [x] `[behavior].awww_transition_fps` (integer)
+- [x] `[behavior].awww_auto_start` (true/false)
 
 ## 5) Load Order Logic
 - [x] Add `load_config()` early in `main`.

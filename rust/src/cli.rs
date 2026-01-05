@@ -5,6 +5,8 @@ use clap::{Parser, Subcommand};
 pub struct Cli {
   #[command(subcommand)]
   pub command: Command,
+  #[arg(long, global = true, help = "Print the awww command used for transitions")]
+  pub debug_awww: bool,
 }
 
 #[derive(Subcommand, Debug)]
