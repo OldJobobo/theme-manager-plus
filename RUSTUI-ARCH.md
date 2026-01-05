@@ -57,7 +57,7 @@ starship_themes_dir = "~/.config/starship-themes"
 
 [waybar]
 apply_mode = "exec" # copy|exec
-restart_cmd = "tmplus-restart-waybar"
+restart_cmd = "" # optional override (built-in exec restart is default)
 default_mode = "auto" # auto|named
 default_name = ""
 

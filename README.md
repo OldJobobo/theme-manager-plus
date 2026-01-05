@@ -87,9 +87,9 @@ Notes:
 - If a theme has `waybar-theme/preview.png` (or `preview.PNG`), the browse screen shows it.
 - Theme previews also fall back to `theme.png` (case-insensitive) in the theme root.
 - If there is no preview, the browser falls back to the first image in `backgrounds/`.
-- Optional helper: `extras/omarchy/tmplus-restart-waybar` restarts Waybar with `-c/--config` and `-s/--style` support.
-- `WAYBAR_APPLY_MODE="exec"` (default) uses `tmplus-restart-waybar` to restart Waybar with explicit config/style paths.
-- If the helper is not found, Theme Manager+ falls back to copy mode with a warning.
+- Optional helper: `extras/omarchy/tmplus-restart-waybar` mirrors the built-in Waybar exec restart (and is used by the Bash CLI).
+- The Rust binary uses a built-in restart in exec mode (pkill + `uwsm-app -- waybar -c/-s`) unless `WAYBAR_RESTART_CMD` overrides it.
+- The Bash CLI falls back to copy mode with a warning if the helper is missing.
 
 ### Starship
 Theme Manager Plus can apply Starship prompt configs after a theme switch.

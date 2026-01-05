@@ -36,7 +36,7 @@ apply_mode = "copy"
 }
 
 #[test]
-fn waybar_apply_exec_uses_helper() {
+fn waybar_apply_exec_uses_builtin_restart() {
   let env = setup_env();
   add_omarchy_stubs(&env.bin);
   let themes = omarchy_dir(&env.home).join("themes");
@@ -56,7 +56,7 @@ default_mode = "auto"
   );
 
   let marker = env.temp.path().join("waybar-args");
-  let script = env.bin.join("tmplus-restart-waybar");
+  let script = env.bin.join("setsid");
   write_script(
     &script,
     &format!(
@@ -64,13 +64,22 @@ default_mode = "auto"
       marker.display()
     ),
   );
+  write_stub_ok(&env.bin.join("uwsm-app"));
 
   let mut cmd = cmd_with_env(&env);
   cmd.env_remove("THEME_MANAGER_SKIP_APPS");
   cmd.args(["set", "theme-a", "-w"]);
   cmd.assert().success();
 
+  for _ in 0..20 {
+    if marker.exists() {
+      break;
+    }
+    std::thread::sleep(std::time::Duration::from_millis(10));
+  }
   let args = fs::read_to_string(marker).unwrap();
+  assert!(args.contains("uwsm-app"));
+  assert!(args.contains("waybar"));
   assert!(args.contains("-c"));
   assert!(args.contains("waybar-theme/config.jsonc"));
   assert!(args.contains("-s"));

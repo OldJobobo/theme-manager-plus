@@ -15,6 +15,12 @@ pub struct RestartCommand {
   pub args: Vec<String>,
 }
 
+#[derive(Debug, Clone)]
+pub enum RestartAction {
+  Command(RestartCommand),
+  WaybarExec { config_path: PathBuf, style_path: PathBuf },
+}
+
 pub fn command_exists(cmd: &str) -> bool {
   which::which(cmd).is_ok()
 }
@@ -104,11 +110,21 @@ pub fn run_command(cmd: &str, args: &[&str], quiet: bool) -> Result<()> {
   Ok(())
 }
 
-pub fn reload_components(quiet: bool, waybar_restart: Option<RestartCommand>) -> Result<()> {
+pub fn reload_components(quiet: bool, waybar_restart: Option<RestartAction>) -> Result<()> {
   run_optional("omarchy-restart-terminal", &[], quiet)?;
   if let Some(restart) = waybar_restart {
-    let arg_refs: Vec<&str> = restart.args.iter().map(|arg| arg.as_str()).collect();
-    run_command(&restart.cmd, &arg_refs, quiet)?;
+    match restart {
+      RestartAction::Command(restart) => {
+        let arg_refs: Vec<&str> = restart.args.iter().map(|arg| arg.as_str()).collect();
+        run_command(&restart.cmd, &arg_refs, quiet)?;
+      }
+      RestartAction::WaybarExec {
+        config_path,
+        style_path,
+      } => {
+        restart_waybar_exec(&config_path, &style_path, quiet)?;
+      }
+    }
   } else {
     run_optional("omarchy-restart-waybar", &[], quiet)?;
   }
@@ -119,6 +135,87 @@ pub fn reload_components(quiet: bool, waybar_restart: Option<RestartCommand>) ->
     let _ = run_command("pkill", &["-SIGUSR2", "btop"], true);
   }
   Ok(())
+}
+
+fn restart_waybar_exec(config_path: &Path, style_path: &Path, quiet: bool) -> Result<()> {
+  let mut waybar_args = Vec::new();
+  if !config_path.as_os_str().is_empty() {
+    waybar_args.push("-c".to_string());
+    waybar_args.push(config_path.to_string_lossy().to_string());
+  }
+  if !style_path.as_os_str().is_empty() {
+    waybar_args.push("-s".to_string());
+    waybar_args.push(style_path.to_string_lossy().to_string());
+  }
+
+  if command_exists("pkill") {
+    let _ = Command::new("pkill").args(["-x", "waybar"]).status();
+  }
+
+  let use_setsid = command_exists("setsid");
+  let use_uwsm = command_exists("uwsm-app");
+
+  let mut candidates: Vec<Vec<String>> = Vec::new();
+  if use_setsid && use_uwsm {
+    let mut cmd = vec!["setsid".to_string(), "uwsm-app".to_string(), "--".to_string()];
+    cmd.push("waybar".to_string());
+    cmd.extend(waybar_args.clone());
+    candidates.push(cmd);
+  }
+  if use_uwsm {
+    let mut cmd = vec!["uwsm-app".to_string(), "--".to_string(), "waybar".to_string()];
+    cmd.extend(waybar_args.clone());
+    candidates.push(cmd);
+  }
+  if use_setsid {
+    let mut cmd = vec!["setsid".to_string(), "waybar".to_string()];
+    cmd.extend(waybar_args.clone());
+    candidates.push(cmd);
+  }
+  let mut cmd = vec!["waybar".to_string()];
+  cmd.extend(waybar_args);
+  candidates.push(cmd);
+
+  for parts in candidates {
+    let mut iter = parts.iter();
+    let Some(cmd) = iter.next() else { continue };
+    if !quiet {
+      println!("theme-manager: starting waybar via {}", cmd);
+    }
+    let mut command = Command::new(cmd);
+    command.args(iter);
+    if quiet {
+      command.stdout(Stdio::null()).stderr(Stdio::null());
+    }
+    match command.spawn() {
+      Ok(mut child) => {
+        thread::sleep(Duration::from_millis(100));
+        match child.try_wait() {
+          Ok(Some(status)) => {
+            if status.success() {
+              return Ok(());
+            }
+            if !quiet {
+              eprintln!("theme-manager: waybar restart exited: {status}");
+            }
+          }
+          Ok(None) => return Ok(()),
+          Err(err) => {
+            if !quiet {
+              eprintln!("theme-manager: waybar restart check failed: {err}");
+            }
+          }
+        }
+      }
+      Err(err) => {
+        if !quiet {
+          eprintln!("theme-manager: waybar restart spawn failed: {err}");
+        }
+      }
+    }
+  }
+
+  Err(anyhow!("failed to restart waybar"))
 }
 
 pub fn apply_theme_setters(quiet: bool) -> Result<()> {
