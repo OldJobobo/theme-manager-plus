@@ -3,6 +3,9 @@
 All notable changes to this project are documented in this file.
 
 ## Unreleased
+- Added tabbed browse workflow with review/apply step, mouse focus, and improved key handling.
+- Added new awww transition presets and expanded awww transition configuration options.
+- Improved preview rendering and clearing behavior in the TUI.
 - Added awww-backed wallpaper transitions with theme background cycling, daemon auto-start, and debug logging support.
 - Deferred app restarts until after theme, Waybar, and Starship changes are applied.
 - Reworked browse TUI layout with syntax-highlighted config previews and dedicated image/prompt preview panes.

@@ -161,6 +161,12 @@ pub fn run_awww_transition(config: &ResolvedConfig, quiet: bool, debug_awww: boo
     format!("--transition-angle={}", angle),
     "--transition-fps".to_string(),
     format!("{}", config.awww_transition_fps),
+    "--transition-pos".to_string(),
+    config.awww_transition_pos.clone(),
+    "--transition-bezier".to_string(),
+    config.awww_transition_bezier.clone(),
+    "--transition-wave".to_string(),
+    config.awww_transition_wave.clone(),
   ];
 
   if debug_awww {

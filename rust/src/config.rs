@@ -47,6 +47,9 @@ pub struct BehaviorConfig {
   pub awww_transition_duration: Option<f32>,
   pub awww_transition_angle: Option<f32>,
   pub awww_transition_fps: Option<u32>,
+  pub awww_transition_pos: Option<String>,
+  pub awww_transition_bezier: Option<String>,
+  pub awww_transition_wave: Option<String>,
   pub awww_auto_start: Option<bool>,
 }
 
@@ -73,6 +76,9 @@ pub struct ResolvedConfig {
   pub awww_transition_duration: f32,
   pub awww_transition_angle: f32,
   pub awww_transition_fps: u32,
+  pub awww_transition_pos: String,
+  pub awww_transition_bezier: String,
+  pub awww_transition_wave: String,
   pub awww_auto_start: bool,
 }
 
@@ -121,10 +127,13 @@ impl ResolvedConfig {
       default_starship_name: None,
       quiet_default: false,
       awww_transition: true,
-      awww_transition_type: "wipe".to_string(),
-      awww_transition_duration: 2.0,
-      awww_transition_angle: 45.0,
+      awww_transition_type: "grow".to_string(),
+      awww_transition_duration: 2.4,
+      awww_transition_angle: 35.0,
       awww_transition_fps: 60,
+      awww_transition_pos: "center".to_string(),
+      awww_transition_bezier: ".42,0,.2,1".to_string(),
+      awww_transition_wave: "28,12".to_string(),
       awww_auto_start: false,
     }
   }
@@ -205,6 +214,15 @@ impl ResolvedConfig {
       if let Some(val) = behavior.awww_transition_fps {
         self.awww_transition_fps = val;
       }
+      if let Some(val) = &behavior.awww_transition_pos {
+        self.awww_transition_pos = val.clone();
+      }
+      if let Some(val) = &behavior.awww_transition_bezier {
+        self.awww_transition_bezier = val.clone();
+      }
+      if let Some(val) = &behavior.awww_transition_wave {
+        self.awww_transition_wave = val.clone();
+      }
       if let Some(val) = behavior.awww_auto_start {
         self.awww_auto_start = val;
       }
@@ -275,6 +293,21 @@ impl ResolvedConfig {
     if let Ok(val) = env::var("THEME_MANAGER_AWWW_AUTO_START") {
       if val == "1" || val.eq_ignore_ascii_case("true") {
         self.awww_auto_start = true;
+      }
+    }
+    if let Ok(val) = env::var("THEME_MANAGER_AWWW_TRANSITION_POS") {
+      if !val.is_empty() {
+        self.awww_transition_pos = val;
+      }
+    }
+    if let Ok(val) = env::var("THEME_MANAGER_AWWW_TRANSITION_BEZIER") {
+      if !val.is_empty() {
+        self.awww_transition_bezier = val;
+      }
+    }
+    if let Ok(val) = env::var("THEME_MANAGER_AWWW_TRANSITION_WAVE") {
+      if !val.is_empty() {
+        self.awww_transition_wave = val;
       }
     }
     Ok(())
@@ -392,6 +425,9 @@ pub fn print_config(config: &ResolvedConfig) {
   );
   println!("AWWW_TRANSITION_ANGLE={}", config.awww_transition_angle);
   println!("AWWW_TRANSITION_FPS={}", config.awww_transition_fps);
+  println!("AWWW_TRANSITION_POS={}", config.awww_transition_pos);
+  println!("AWWW_TRANSITION_BEZIER={}", config.awww_transition_bezier);
+  println!("AWWW_TRANSITION_WAVE={}", config.awww_transition_wave);
   println!(
     "AWWW_AUTO_START={}",
     if config.awww_auto_start { "1" } else { "" }

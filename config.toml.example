@@ -22,8 +22,29 @@
 [behavior]
 # quiet_default = false
 # awww_transition = true
+# awww_transition_type = "grow"
+# awww_transition_duration = 2.4
+# awww_transition_angle = 35
+# awww_transition_fps = 60
+# awww_transition_pos = "center"
+# awww_transition_bezier = ".42,0,.2,1"
+# awww_transition_wave = "28,12"
+#
+# Cinematic drift (wave) preset:
+# awww_transition_type = "wave"
+# awww_transition_duration = 2.6
+# awww_transition_angle = 35
+# awww_transition_fps = 60
+# awww_transition_pos = "center"
+# awww_transition_bezier = ".42,0,.2,1"
+# awww_transition_wave = "28,12"
+#
+# Classic wipe preset:
 # awww_transition_type = "wipe"
 # awww_transition_duration = 2.0
 # awww_transition_angle = 45
 # awww_transition_fps = 60
+# awww_transition_pos = "center"
+# awww_transition_bezier = ".54,0,.34,.99"
+# awww_transition_wave = "20,20"
 # awww_auto_start = false

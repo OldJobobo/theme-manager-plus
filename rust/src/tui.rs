@@ -1,18 +1,22 @@
 use anyhow::{anyhow, Result};
-use crossterm::event::{self, Event, KeyCode};
+use crossterm::event::{
+  self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers,
+  KeyboardEnhancementFlags, MouseButton, MouseEventKind, PopKeyboardEnhancementFlags,
+  PushKeyboardEnhancementFlags,
+};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use crossterm::{execute, terminal};
 use ratatui::backend::CrosstermBackend;
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::layout::{Constraint, Direction, Layout, Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::{Line, Text};
+use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap};
-use ratatui::Terminal;
+use ratatui::{Frame, Terminal};
 use std::fs;
 use std::io::{stdout, Stdout};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use ansi_to_tui::IntoText;
 use ratatui_core::layout::Alignment as CoreAlignment;
 use ratatui_core::style::{Color as CoreColor, Modifier as CoreModifier, Style as CoreStyle};
@@ -26,6 +30,20 @@ use tempfile::TempDir;
 use crate::config::ResolvedConfig;
 use crate::paths::title_case_theme;
 use crate::preview;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FocusArea {
+  List,
+  Code,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BrowseTab {
+  Theme,
+  Waybar,
+  Starship,
+  Review,
+}
 
 #[derive(Debug)]
 pub struct BrowseSelection {
@@ -49,6 +67,40 @@ pub enum StarshipSelection {
   Preset(String),
   Named(String),
   Theme(PathBuf),
+}
+
+struct PickerState {
+  list_state: ListState,
+  last_code_index: Option<usize>,
+  last_code: Text<'static>,
+  last_preview_index: Option<usize>,
+  last_preview: Option<PathBuf>,
+  preview_dirty: bool,
+  last_preview_text: Text<'static>,
+  code_scroll: u16,
+  focus: FocusArea,
+  image_visible: bool,
+  force_clear: bool,
+}
+
+impl PickerState {
+  fn new() -> Self {
+    let mut list_state = ListState::default();
+    list_state.select(Some(0));
+    Self {
+      list_state,
+      last_code_index: None,
+      last_code: Text::from("Loading preview..."),
+      last_preview_index: None,
+      last_preview: None,
+      preview_dirty: false,
+      last_preview_text: Text::from(""),
+      code_scroll: 0,
+      focus: FocusArea::List,
+      image_visible: false,
+      force_clear: false,
+    }
+  }
 }
 
 struct PreviewBackend {
@@ -166,80 +218,363 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
     .collect();
 
   let backend = PreviewBackend::detect();
-  let selected_theme = match select_list_with_previews(
-    "Select theme",
-    &theme_items,
-    &backend,
-    |idx| {
-      let theme_path = config.theme_root_dir.join(&theme_items[idx].value);
-      load_code_preview(
-        "hyprland.conf",
-        theme_path.join("hyprland.conf"),
-        "conf",
-      )
-    },
-    |idx| theme_items[idx].preview.clone(),
-    "Image Preview",
-    |_idx| None,
-  )? {
-    Some(index) => theme_items[index].value.clone(),
-    None => return Ok(None),
-  };
+  let mut terminal = setup_terminal()?;
+  let mut tab = BrowseTab::Theme;
+  let tab_titles = ["Theme", "Waybar", "Starship", "Review"];
+  let mut tab_ranges: Vec<(u16, u16, usize)> = Vec::new();
+  let mut active_list_inner = Rect::ZERO;
+  let mut active_code_inner = Rect::ZERO;
+  let mut active_code_area = Rect::ZERO;
+  let mut tab_area = Rect::ZERO;
+  let mut last_repeat_key: Option<(KeyCode, KeyModifiers)> = None;
+  let mut last_repeat_at = Instant::now();
+  let mut last_press_key: Option<(KeyCode, KeyModifiers, Instant)> = None;
+  let mut status_message = String::new();
+  let mut status_tab = BrowseTab::Theme;
+  let mut status_at = Instant::now();
 
-  let theme_path = config.theme_root_dir.join(&selected_theme);
+  let mut theme_state = PickerState::new();
+  ensure_selected(&mut theme_state.list_state, theme_items.len());
+  let mut selected_theme = current_theme_value(&theme_items, &theme_state.list_state)?;
+  let mut theme_path = config.theme_root_dir.join(&selected_theme);
 
-  let waybar_selection = match build_waybar_options(config, &theme_path)? {
-    SelectionOptions::UseDefaults => WaybarSelection::UseDefaults,
-    SelectionOptions::Items(items) => {
-      let choice = match select_list_with_previews(
-        "Select Waybar",
-        &items,
-        &backend,
-        |idx| build_waybar_code_preview(config, &theme_path, &items[idx]),
-        |idx| items[idx].preview.clone(),
-        "Image Preview",
-        |_idx| None,
-      )? {
-        Some(index) => items[index].clone(),
-        None => return Ok(None),
-      };
-      match choice.kind.as_str() {
-        "default" => WaybarSelection::None,
-        "theme" => WaybarSelection::Auto,
-        _ => WaybarSelection::Named(choice.value),
+  let mut waybar_items = build_waybar_items(config, &theme_path)?;
+  let mut starship_items = build_starship_items(config, &theme_path)?;
+  let mut waybar_state = PickerState::new();
+  let mut starship_state = PickerState::new();
+  ensure_selected(&mut waybar_state.list_state, waybar_items.len());
+  ensure_selected(&mut starship_state.list_state, starship_items.len());
+
+  loop {
+    terminal.draw(|frame| {
+      let size = frame.area();
+      let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(3), Constraint::Min(0)].as_ref())
+        .split(size);
+      tab_area = chunks[0];
+      let content_area = chunks[1];
+
+      render_tab_bar(frame, tab_area, &tab_titles, tab, &mut tab_ranges);
+      let status_active = !status_message.is_empty()
+        && status_at.elapsed() < Duration::from_millis(1200);
+
+      match tab {
+        BrowseTab::Theme => {
+          let areas = render_picker(
+            frame,
+            content_area,
+            "Select theme",
+            "Image Preview",
+            &theme_items,
+            &mut theme_state,
+            &backend,
+            |idx| {
+              let theme_path = config.theme_root_dir.join(&theme_items[idx].value);
+              load_code_preview(
+                "hyprland.conf",
+                theme_path.join("hyprland.conf"),
+                "conf",
+              )
+            },
+            |idx| theme_items[idx].preview.clone(),
+            |_idx| None,
+            true,
+            if status_active && status_tab == BrowseTab::Theme {
+              Some(status_message.as_str())
+            } else {
+              None
+            },
+          );
+          active_list_inner = areas.list_inner;
+          active_code_inner = areas.code_inner;
+          active_code_area = areas.code_area;
+        }
+        BrowseTab::Waybar => {
+          let areas = render_picker(
+            frame,
+            content_area,
+            "Select Waybar",
+            "Image Preview",
+            &waybar_items,
+            &mut waybar_state,
+            &backend,
+            |idx| build_waybar_code_preview(config, &theme_path, &waybar_items[idx]),
+            |idx| waybar_items[idx].preview.clone(),
+            |_idx| None,
+            true,
+            if status_active && status_tab == BrowseTab::Waybar {
+              Some(status_message.as_str())
+            } else {
+              None
+            },
+          );
+          active_list_inner = areas.list_inner;
+          active_code_inner = areas.code_inner;
+          active_code_area = areas.code_area;
+        }
+        BrowseTab::Starship => {
+          let areas = render_picker(
+            frame,
+            content_area,
+            "Select Starship",
+            "Prompt Preview",
+            &starship_items,
+            &mut starship_state,
+            &backend,
+            |idx| build_starship_code_preview(config, &theme_path, &starship_items[idx]),
+            |_idx| None,
+            |idx| Some(build_starship_prompt_preview(config, &theme_path, &starship_items[idx])),
+            false,
+            if status_active && status_tab == BrowseTab::Starship {
+              Some(status_message.as_str())
+            } else {
+              None
+            },
+          );
+          active_list_inner = areas.list_inner;
+          active_code_inner = areas.code_inner;
+          active_code_area = areas.code_area;
+        }
+        BrowseTab::Review => {
+          active_list_inner = Rect::ZERO;
+          active_code_inner = Rect::ZERO;
+          active_code_area = Rect::ZERO;
+          render_review(
+            frame,
+            content_area,
+            &selected_theme,
+            current_waybar_label(&waybar_items, &waybar_state.list_state),
+            current_starship_label(&starship_items, &starship_state.list_state),
+          );
+        }
+      }
+    })?;
+
+    if event::poll(Duration::from_millis(200))? {
+      match event::read()? {
+        Event::Key(key) => {
+          if key.kind == KeyEventKind::Release {
+            continue;
+          }
+          let now = Instant::now();
+          let is_repeat = key.kind == event::KeyEventKind::Repeat;
+          if is_repeat {
+            if let Some((last_code, last_mod, last_at)) = last_press_key {
+              if last_code == key.code && last_mod == key.modifiers {
+                if now.duration_since(last_at) < Duration::from_millis(150) {
+                  continue;
+                }
+              }
+            }
+            if let Some((last_code, last_mod)) = last_repeat_key {
+              if last_code == key.code && last_mod == key.modifiers {
+                if now.duration_since(last_repeat_at) < Duration::from_millis(35) {
+                  continue;
+                }
+              }
+            }
+            last_repeat_key = Some((key.code, key.modifiers));
+            last_repeat_at = now;
+          } else {
+            last_press_key = Some((key.code, key.modifiers, now));
+          }
+          if key.code == KeyCode::Char('q') || key.code == KeyCode::Esc {
+            cleanup_terminal(&mut terminal)?;
+            return Ok(None);
+          }
+          if key.code == KeyCode::Tab {
+            tab = previous_tab(tab);
+            clear_kitty_preview(&backend);
+            mark_force_clear(&mut theme_state, &mut waybar_state, &mut starship_state);
+            continue;
+          }
+          if key.code == KeyCode::BackTab {
+            tab = next_tab(tab);
+            clear_kitty_preview(&backend);
+            mark_force_clear(&mut theme_state, &mut waybar_state, &mut starship_state);
+            continue;
+          }
+          if tab == BrowseTab::Review
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+            && matches!(key.code, KeyCode::Enter | KeyCode::Char('m') | KeyCode::Char('j'))
+          {
+            let selection = BrowseSelection {
+              theme: selected_theme.clone(),
+              waybar: current_waybar_selection(&waybar_items, &waybar_state.list_state),
+              starship: current_starship_selection(
+                &starship_items,
+                &starship_state.list_state,
+                &theme_path,
+              ),
+            };
+            cleanup_terminal(&mut terminal)?;
+            return Ok(Some(selection));
+          }
+          if key.code == KeyCode::Enter && tab != BrowseTab::Review {
+            status_tab = tab;
+            status_at = Instant::now();
+            status_message = match tab {
+              BrowseTab::Theme => "Theme selected".to_string(),
+              BrowseTab::Waybar => "Waybar selected".to_string(),
+              BrowseTab::Starship => "Starship selected".to_string(),
+              BrowseTab::Review => String::new(),
+            };
+            tab = next_tab(tab);
+            continue;
+          }
+
+          if let Some(state) = active_picker_mut(tab, &mut theme_state, &mut waybar_state, &mut starship_state) {
+            let items_len = active_items_len(tab, &theme_items, &waybar_items, &starship_items);
+            match key.code {
+              KeyCode::Up | KeyCode::Char('k') | KeyCode::Char('h') => match state.focus {
+                FocusArea::List => {
+                  let new_index = previous_index(state.list_state.selected(), items_len);
+                  state.list_state.select(Some(new_index));
+                }
+                FocusArea::Code => {
+                  state.code_scroll = state.code_scroll.saturating_sub(1);
+                }
+              },
+              KeyCode::Down | KeyCode::Char('j') | KeyCode::Char('l') => match state.focus {
+                FocusArea::List => {
+                  let new_index = next_index(state.list_state.selected(), items_len);
+                  state.list_state.select(Some(new_index));
+                }
+                FocusArea::Code => {
+                  state.code_scroll = state.code_scroll.saturating_add(1);
+                }
+              },
+              KeyCode::PageUp => {
+                let step = inner_rect(active_code_area).height.max(1);
+                state.code_scroll = state.code_scroll.saturating_sub(step);
+              }
+              KeyCode::PageDown => {
+                let step = inner_rect(active_code_area).height.max(1);
+                state.code_scroll = state.code_scroll.saturating_add(step);
+              }
+              KeyCode::Home => match state.focus {
+                FocusArea::List => state.list_state.select(Some(0)),
+                FocusArea::Code => state.code_scroll = 0,
+              },
+              KeyCode::End => match state.focus {
+                FocusArea::List => {
+                  state
+                    .list_state
+                    .select(Some(items_len.saturating_sub(1)));
+                }
+                FocusArea::Code => {
+                  let code_height = inner_rect(active_code_area).height as usize;
+                  let max_scroll = state
+                    .last_code
+                    .lines
+                    .len()
+                    .saturating_sub(code_height.max(1));
+                  state.code_scroll = max_scroll as u16;
+                }
+              },
+              _ => {}
+            }
+          }
+        }
+        Event::Mouse(mouse) => match mouse.kind {
+          MouseEventKind::Down(MouseButton::Left) => {
+            if tab_area.contains(Position {
+              x: mouse.column,
+              y: mouse.row,
+            }) {
+              if let Some(index) = tab_index_from_click(&tab_ranges, mouse.column) {
+                tab = tab_from_index(index);
+                clear_kitty_preview(&backend);
+                mark_force_clear(&mut theme_state, &mut waybar_state, &mut starship_state);
+                continue;
+              }
+            }
+
+            if let Some(state) =
+              active_picker_mut(tab, &mut theme_state, &mut waybar_state, &mut starship_state)
+            {
+              let position = Position {
+                x: mouse.column,
+                y: mouse.row,
+              };
+              if active_list_inner.contains(position) {
+                state.focus = FocusArea::List;
+                let items_len = active_items_len(tab, &theme_items, &waybar_items, &starship_items);
+                select_index_at_row(
+                  &mut state.list_state,
+                  active_list_inner,
+                  mouse.row,
+                  items_len,
+                );
+              } else if active_code_inner.contains(position) {
+                state.focus = FocusArea::Code;
+              }
+            }
+          }
+          MouseEventKind::ScrollUp => {
+            if let Some(state) =
+              active_picker_mut(tab, &mut theme_state, &mut waybar_state, &mut starship_state)
+            {
+              let position = Position {
+                x: mouse.column,
+                y: mouse.row,
+              };
+              if active_list_inner.contains(position) {
+                state.focus = FocusArea::List;
+                let items_len = active_items_len(tab, &theme_items, &waybar_items, &starship_items);
+                let new_index = previous_index(state.list_state.selected(), items_len);
+                state.list_state.select(Some(new_index));
+              } else if active_code_inner.contains(position) {
+                state.focus = FocusArea::Code;
+                state.code_scroll = state.code_scroll.saturating_sub(1);
+              }
+            }
+          }
+          MouseEventKind::ScrollDown => {
+            if let Some(state) =
+              active_picker_mut(tab, &mut theme_state, &mut waybar_state, &mut starship_state)
+            {
+              let position = Position {
+                x: mouse.column,
+                y: mouse.row,
+              };
+              if active_list_inner.contains(position) {
+                state.focus = FocusArea::List;
+                let items_len = active_items_len(tab, &theme_items, &waybar_items, &starship_items);
+                let new_index = next_index(state.list_state.selected(), items_len);
+                state.list_state.select(Some(new_index));
+              } else if active_code_inner.contains(position) {
+                state.focus = FocusArea::Code;
+                state.code_scroll = state.code_scroll.saturating_add(1);
+              }
+            }
+          }
+          _ => {}
+        },
+        _ => {}
       }
     }
-  };
 
-  let starship_selection = match build_starship_options(config, &theme_path)? {
-    StarshipOptions::UseDefaults => StarshipSelection::UseDefaults,
-    StarshipOptions::Items(items) => {
-      let choice = match select_list_with_previews(
-        "Select Starship",
-        &items,
-        &backend,
-        |idx| build_starship_code_preview(config, &theme_path, &items[idx]),
-        |_idx| None,
-        "Prompt Preview",
-        |idx| Some(build_starship_prompt_preview(config, &theme_path, &items[idx])),
-      )? {
-        Some(index) => items[index].clone(),
-        None => return Ok(None),
-      };
-      match choice.kind.as_str() {
-        "default" => StarshipSelection::None,
-        "theme" => StarshipSelection::Theme(theme_path.join("starship.yaml")),
-        "preset" => StarshipSelection::Preset(choice.value),
-        _ => StarshipSelection::Named(choice.value),
-      }
+    let new_theme = current_theme_value(&theme_items, &theme_state.list_state)?;
+    if new_theme != selected_theme {
+      selected_theme = new_theme;
+      theme_path = config.theme_root_dir.join(&selected_theme);
+      let waybar_key = selected_item_key(&waybar_items, &waybar_state.list_state);
+      let starship_key = selected_item_key(&starship_items, &starship_state.list_state);
+
+      waybar_items = build_waybar_items(config, &theme_path)?;
+      starship_items = build_starship_items(config, &theme_path)?;
+
+      reset_picker_cache(&mut waybar_state);
+      reset_picker_cache(&mut starship_state);
+
+      select_item_by_key(&mut waybar_state.list_state, &waybar_items, waybar_key);
+      select_item_by_key(&mut starship_state.list_state, &starship_items, starship_key);
+      ensure_selected(&mut waybar_state.list_state, waybar_items.len());
+      ensure_selected(&mut starship_state.list_state, starship_items.len());
     }
-  };
-
-  Ok(Some(BrowseSelection {
-    theme: selected_theme,
-    waybar: waybar_selection,
-    starship: starship_selection,
-  }))
+  }
 }
 
 struct OptionItem {
@@ -267,17 +602,7 @@ struct LabeledItem {
   preview: Option<PathBuf>,
 }
 
-enum SelectionOptions {
-  UseDefaults,
-  Items(Vec<LabeledItem>),
-}
-
-enum StarshipOptions {
-  UseDefaults,
-  Items(Vec<LabeledItem>),
-}
-
-fn build_waybar_options(config: &ResolvedConfig, theme_path: &Path) -> Result<SelectionOptions> {
+fn build_waybar_items(config: &ResolvedConfig, theme_path: &Path) -> Result<Vec<LabeledItem>> {
   let mut items = Vec::new();
   items.push(OptionItem::with_kind(
     "Omarchy default".to_string(),
@@ -307,14 +632,10 @@ fn build_waybar_options(config: &ResolvedConfig, theme_path: &Path) -> Result<Se
     ));
   }
 
-  if items.len() <= 1 {
-    return Ok(SelectionOptions::UseDefaults);
-  }
-
-  Ok(SelectionOptions::Items(items))
+  Ok(items)
 }
 
-fn build_starship_options(config: &ResolvedConfig, theme_path: &Path) -> Result<StarshipOptions> {
+fn build_starship_items(config: &ResolvedConfig, theme_path: &Path) -> Result<Vec<LabeledItem>> {
   let mut items = Vec::new();
   items.push(OptionItem::with_kind(
     "Omarchy default".to_string(),
@@ -350,11 +671,7 @@ fn build_starship_options(config: &ResolvedConfig, theme_path: &Path) -> Result<
     ));
   }
 
-  if items.len() <= 1 {
-    return Ok(StarshipOptions::UseDefaults);
-  }
-
-  Ok(StarshipOptions::Items(items))
+  Ok(items)
 }
 
 fn build_waybar_code_preview(
@@ -667,134 +984,451 @@ fn trim_empty_lines(mut lines: Vec<Line<'static>>) -> Vec<Line<'static>> {
   lines
 }
 
-fn select_list_with_previews(
+struct PickerAreas {
+  list_inner: Rect,
+  code_inner: Rect,
+  code_area: Rect,
+}
+
+fn render_picker<T: ItemView>(
+  frame: &mut Frame,
+  area: Rect,
   title: &str,
-  items: &[impl ItemView],
+  preview_title: &str,
+  items: &[T],
+  state: &mut PickerState,
   backend: &PreviewBackend,
   code_preview: impl Fn(usize) -> Text<'static>,
   image_preview: impl Fn(usize) -> Option<PathBuf>,
-  preview_title: &str,
   preview_text: impl Fn(usize) -> Option<Text<'static>>,
-) -> Result<Option<usize>> {
-  let mut terminal = setup_terminal()?;
-  let mut state = ListState::default();
-  state.select(Some(0));
-  let mut last_preview = None::<PathBuf>;
-  let mut preview_dirty = false;
-  let mut last_code_index = None::<usize>;
-  let mut last_code = Text::from("Loading preview...");
-  let mut last_preview_index = None::<usize>;
-  let mut last_preview_text = Text::from("");
-
-  loop {
-    terminal.draw(|frame| {
-      let size = frame.area();
-      let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Percentage(65), Constraint::Percentage(35)].as_ref())
-        .split(size);
-      let top_chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(40), Constraint::Percentage(60)].as_ref())
-        .split(chunks[0]);
-      let image_area = inner_rect(chunks[1]);
-
-      let list_items: Vec<ListItem> = items
-        .iter()
-        .map(|item| ListItem::new(Line::from(item.label())))
-        .collect();
-      let list = List::new(list_items)
-        .block(Block::default().title(title).borders(Borders::ALL))
-        .highlight_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
-        .highlight_symbol(">> ");
-      frame.render_stateful_widget(list, top_chunks[0], &mut state);
-
-      let preview_path = state
-        .selected()
-        .and_then(|idx| items.get(idx))
-        .and_then(|_item| image_preview(state.selected().unwrap_or(0)));
-
-      let selected = state.selected().unwrap_or(0);
-      if Some(selected) != last_code_index {
-        last_code = code_preview(selected);
-        last_code_index = Some(selected);
-      }
-
-      let code = Paragraph::new(last_code.clone())
-        .block(Block::default().title("Code Preview").borders(Borders::ALL))
-        .wrap(Wrap { trim: false });
-      frame.render_widget(code, top_chunks[1]);
-
-      if Some(selected) != last_preview_index {
-        if let Some(text) = preview_text(selected) {
-          last_preview_text = text;
-          last_preview = None;
-          preview_dirty = false;
-        } else {
-          last_preview_text = Text::from("");
-          if last_preview != preview_path {
-            last_preview = preview_path.clone();
-            preview_dirty = true;
-          }
-        }
-        last_preview_index = Some(selected);
-      }
-
-      if preview_dirty && last_preview.is_some() {
-        backend.render(last_preview.as_deref(), image_area);
-        preview_dirty = false;
-      }
-
-      let preview_text_rendered = if last_preview_text.lines.is_empty() {
-        backend.text_preview(last_preview.as_deref(), image_area)
+  tall_image_preview: bool,
+  status: Option<&str>,
+) -> PickerAreas {
+  let chunks = Layout::default()
+    .direction(Direction::Vertical)
+    .constraints(
+      if tall_image_preview {
+        [Constraint::Percentage(30), Constraint::Percentage(70)].as_ref()
       } else {
-        last_preview_text.clone()
-      };
-      let preview = Paragraph::new(preview_text_rendered)
-        .block(Block::default().title(preview_title).borders(Borders::ALL));
-      frame.render_widget(preview, chunks[1]);
-    })?;
+        [Constraint::Percentage(65), Constraint::Percentage(35)].as_ref()
+      },
+    )
+    .split(area);
+  let top_chunks = Layout::default()
+    .direction(Direction::Horizontal)
+    .constraints([Constraint::Percentage(25), Constraint::Percentage(75)].as_ref())
+    .split(chunks[0]);
+  let image_area = inner_rect(chunks[1]);
+  let list_area = top_chunks[0];
+  let list_inner = list_inner_rect(list_area);
+  let code_area = top_chunks[1];
+  let code_inner = inner_rect(code_area);
 
-    if event::poll(Duration::from_millis(200))? {
-      if let Event::Key(key) = event::read()? {
-        match key.code {
-          KeyCode::Char('q') | KeyCode::Esc => {
-            cleanup_terminal(&mut terminal)?;
-            return Ok(None);
-          }
-          KeyCode::Enter => {
-            let selected = state.selected().unwrap_or(0);
-            cleanup_terminal(&mut terminal)?;
-            return Ok(Some(selected));
-          }
-          KeyCode::Up | KeyCode::Char('k') => {
-            let new_index = previous_index(state.selected(), items.len());
-            state.select(Some(new_index));
-          }
-          KeyCode::Down | KeyCode::Char('j') => {
-            let new_index = next_index(state.selected(), items.len());
-            state.select(Some(new_index));
-          }
-          KeyCode::Home => state.select(Some(0)),
-          KeyCode::End => state.select(Some(items.len().saturating_sub(1))),
-          _ => {}
-        }
+  let list_items: Vec<ListItem> = items
+    .iter()
+    .map(|item| ListItem::new(Line::from(item.label())))
+    .collect();
+  let list_title = if let Some(status) = status {
+    format!("{title}  [{status}]")
+  } else {
+    title.to_string()
+  };
+  let list_block = Block::default()
+    .title(list_title)
+    .borders(Borders::ALL)
+    .border_style(if state.focus == FocusArea::List {
+      Style::default()
+        .fg(if status.is_some() {
+          Color::Green
+        } else {
+          Color::Yellow
+        })
+    } else {
+      Style::default()
+    });
+  let list = List::new(list_items)
+    .block(list_block)
+    .highlight_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+    .highlight_symbol(">> ");
+  frame.render_stateful_widget(list, list_area, &mut state.list_state);
+
+  let selected = selected_index(&state.list_state, items.len());
+  let preview_path = items
+    .get(selected)
+    .and_then(|_item| image_preview(selected));
+
+  if Some(selected) != state.last_code_index {
+    state.last_code = code_preview(selected);
+    state.code_scroll = 0;
+    state.last_code_index = Some(selected);
+  }
+
+  let max_scroll = state
+    .last_code
+    .lines
+    .len()
+    .saturating_sub(code_inner.height.max(1) as usize);
+  if state.code_scroll as usize > max_scroll {
+    state.code_scroll = max_scroll as u16;
+  }
+  let code_block = Block::default()
+    .title("Code Preview")
+    .borders(Borders::ALL)
+    .border_style(if state.focus == FocusArea::Code {
+      Style::default().fg(Color::Yellow)
+    } else {
+      Style::default()
+    });
+  let code = Paragraph::new(state.last_code.clone())
+    .block(code_block)
+    .scroll((state.code_scroll, 0))
+    .wrap(Wrap { trim: false });
+  frame.render_widget(code, code_area);
+
+  if Some(selected) != state.last_preview_index {
+    if let Some(text) = preview_text(selected) {
+      state.last_preview_text = text;
+      if state.last_preview.is_some() {
+        state.preview_dirty = true;
+      }
+      state.last_preview = None;
+    } else {
+      state.last_preview_text = Text::from("");
+      if state.last_preview != preview_path {
+        state.last_preview = preview_path.clone();
+        state.preview_dirty = true;
       }
     }
+    state.last_preview_index = Some(selected);
   }
+
+  if state.force_clear {
+    backend.render(None, image_area);
+    state.image_visible = false;
+    state.force_clear = false;
+  }
+
+  let wants_image = state.last_preview_text.lines.is_empty() && state.last_preview.is_some();
+  let should_render = state.preview_dirty || (wants_image && !state.image_visible);
+  if should_render {
+    backend.render(state.last_preview.as_deref(), image_area);
+    state.image_visible = wants_image;
+    state.preview_dirty = false;
+  } else if !wants_image && state.image_visible {
+    backend.render(None, image_area);
+    state.image_visible = false;
+  }
+
+  let preview_text_rendered = if state.last_preview_text.lines.is_empty() {
+    backend.text_preview(state.last_preview.as_deref(), image_area)
+  } else {
+    state.last_preview_text.clone()
+  };
+  let preview = Paragraph::new(preview_text_rendered)
+    .block(Block::default().title(preview_title).borders(Borders::ALL));
+  frame.render_widget(preview, chunks[1]);
+
+  PickerAreas {
+    list_inner,
+    code_inner,
+    code_area,
+  }
+}
+
+fn render_review(
+  frame: &mut Frame,
+  area: Rect,
+  selected_theme: &str,
+  waybar_label: String,
+  starship_label: String,
+) {
+  let lines = vec![
+    Line::from("=== Review Selections ==="),
+    Line::from(""),
+    Line::from(format!("Theme: {}", title_case_theme(selected_theme))),
+    Line::from(format!("Waybar: {}", waybar_label)),
+    Line::from(format!("Starship: {}", starship_label)),
+    Line::from(""),
+    Line::from("Apply: Ctrl+Enter"),
+    Line::from("Cancel: Esc"),
+    Line::from("Switch tabs: Tab / Shift+Tab (or click tab bar)"),
+  ];
+  let review = Paragraph::new(Text::from(lines))
+    .block(Block::default().title("Review").borders(Borders::ALL))
+    .wrap(Wrap { trim: false });
+  frame.render_widget(review, area);
+}
+
+fn render_tab_bar(
+  frame: &mut Frame,
+  area: Rect,
+  titles: &[&str],
+  active: BrowseTab,
+  ranges: &mut Vec<(u16, u16, usize)>,
+) {
+  ranges.clear();
+  let block = Block::default().borders(Borders::ALL);
+  let inner = block.inner(area);
+  frame.render_widget(block, area);
+
+  let mut spans = Vec::new();
+  let mut cursor = inner.x;
+  let active_index = tab_index(active);
+
+  for (idx, title) in titles.iter().enumerate() {
+    let label = format!(" {} ", title);
+    let width = label.len() as u16;
+    let style = if idx == active_index {
+      Style::default()
+        .fg(Color::Black)
+        .bg(Color::Yellow)
+        .add_modifier(Modifier::BOLD)
+    } else {
+      Style::default()
+    };
+    spans.push(Span::styled(label, style));
+    ranges.push((cursor, cursor + width.saturating_sub(1), idx));
+    cursor = cursor.saturating_add(width);
+    if idx + 1 < titles.len() {
+      spans.push(Span::raw("│"));
+      cursor = cursor.saturating_add(1);
+    }
+  }
+
+  let line = Line::from(spans);
+  let tabs = Paragraph::new(line).alignment(ratatui::layout::Alignment::Left);
+  frame.render_widget(tabs, inner);
+}
+
+fn clear_kitty_preview(backend: &PreviewBackend) {
+  if matches!(backend.kind, PreviewBackendKind::Kitty) {
+    let _ = Command::new("kitty")
+      .args(["+kitten", "icat", "--clear", "--stdin=no"])
+      .status();
+  }
+}
+
+fn mark_force_clear(
+  theme: &mut PickerState,
+  waybar: &mut PickerState,
+  starship: &mut PickerState,
+) {
+  theme.force_clear = true;
+  waybar.force_clear = true;
+  starship.force_clear = true;
+}
+
+fn active_picker_mut<'a>(
+  tab: BrowseTab,
+  theme: &'a mut PickerState,
+  waybar: &'a mut PickerState,
+  starship: &'a mut PickerState,
+) -> Option<&'a mut PickerState> {
+  match tab {
+    BrowseTab::Theme => Some(theme),
+    BrowseTab::Waybar => Some(waybar),
+    BrowseTab::Starship => Some(starship),
+    BrowseTab::Review => None,
+  }
+}
+
+fn active_items_len(
+  tab: BrowseTab,
+  theme: &[OptionItem],
+  waybar: &[LabeledItem],
+  starship: &[LabeledItem],
+) -> usize {
+  match tab {
+    BrowseTab::Theme => theme.len(),
+    BrowseTab::Waybar => waybar.len(),
+    BrowseTab::Starship => starship.len(),
+    BrowseTab::Review => 0,
+  }
+}
+
+fn tab_index(tab: BrowseTab) -> usize {
+  match tab {
+    BrowseTab::Theme => 0,
+    BrowseTab::Waybar => 1,
+    BrowseTab::Starship => 2,
+    BrowseTab::Review => 3,
+  }
+}
+
+fn tab_from_index(index: usize) -> BrowseTab {
+  match index {
+    0 => BrowseTab::Theme,
+    1 => BrowseTab::Waybar,
+    2 => BrowseTab::Starship,
+    _ => BrowseTab::Review,
+  }
+}
+
+fn next_tab(tab: BrowseTab) -> BrowseTab {
+  tab_from_index((tab_index(tab) + 1) % 4)
+}
+
+fn previous_tab(tab: BrowseTab) -> BrowseTab {
+  tab_from_index((tab_index(tab) + 3) % 4)
+}
+
+fn tab_index_from_click(ranges: &[(u16, u16, usize)], column: u16) -> Option<usize> {
+  ranges
+    .iter()
+    .find(|(start, end, _)| column >= *start && column <= *end)
+    .map(|(_, _, idx)| *idx)
+}
+
+fn current_theme_value(items: &[OptionItem], state: &ListState) -> Result<String> {
+  if items.is_empty() {
+    return Err(anyhow!("no themes available"));
+  }
+  let index = selected_index(state, items.len());
+  Ok(items[index].value.clone())
+}
+
+fn current_waybar_label(items: &[LabeledItem], state: &ListState) -> String {
+  if items.is_empty() {
+    return "No options".to_string();
+  }
+  if items.len() == 1 && items[0].kind == "default" {
+    return "Use defaults".to_string();
+  }
+  let index = selected_index(state, items.len());
+  let item = &items[index];
+  match item.kind.as_str() {
+    "default" => "Omarchy default".to_string(),
+    "theme" => "Theme waybar".to_string(),
+    _ => item.label.clone(),
+  }
+}
+
+fn current_starship_label(items: &[LabeledItem], state: &ListState) -> String {
+  if items.is_empty() {
+    return "No options".to_string();
+  }
+  if items.len() == 1 && items[0].kind == "default" {
+    return "Use defaults".to_string();
+  }
+  let index = selected_index(state, items.len());
+  let item = &items[index];
+  match item.kind.as_str() {
+    "default" => "Omarchy default".to_string(),
+    "theme" => "Theme starship".to_string(),
+    _ => item.label.clone(),
+  }
+}
+
+fn current_waybar_selection(items: &[LabeledItem], state: &ListState) -> WaybarSelection {
+  if items.is_empty() {
+    return WaybarSelection::UseDefaults;
+  }
+  if items.len() == 1 && items[0].kind == "default" {
+    return WaybarSelection::UseDefaults;
+  }
+  let index = selected_index(state, items.len());
+  match items[index].kind.as_str() {
+    "default" => WaybarSelection::None,
+    "theme" => WaybarSelection::Auto,
+    _ => WaybarSelection::Named(items[index].value.clone()),
+  }
+}
+
+fn current_starship_selection(
+  items: &[LabeledItem],
+  state: &ListState,
+  theme_path: &Path,
+) -> StarshipSelection {
+  if items.is_empty() {
+    return StarshipSelection::UseDefaults;
+  }
+  if items.len() == 1 && items[0].kind == "default" {
+    return StarshipSelection::UseDefaults;
+  }
+  let index = selected_index(state, items.len());
+  match items[index].kind.as_str() {
+    "default" => StarshipSelection::None,
+    "theme" => StarshipSelection::Theme(theme_path.join("starship.yaml")),
+    "preset" => StarshipSelection::Preset(items[index].value.clone()),
+    _ => StarshipSelection::Named(items[index].value.clone()),
+  }
+}
+
+fn selected_item_key(items: &[LabeledItem], state: &ListState) -> Option<(String, String)> {
+  if items.is_empty() {
+    return None;
+  }
+  let index = selected_index(state, items.len());
+  Some((items[index].kind.clone(), items[index].value.clone()))
+}
+
+fn select_item_by_key(
+  state: &mut ListState,
+  items: &[LabeledItem],
+  key: Option<(String, String)>,
+) {
+  if let Some((kind, value)) = key {
+    if let Some(index) = items
+      .iter()
+      .position(|item| item.kind == kind && item.value == value)
+    {
+      state.select(Some(index));
+    }
+  }
+}
+
+fn reset_picker_cache(state: &mut PickerState) {
+  state.last_code_index = None;
+  state.last_preview_index = None;
+  state.last_preview = None;
+  state.preview_dirty = false;
+  state.last_preview_text = Text::from("");
+  state.code_scroll = 0;
+  state.image_visible = false;
+  state.force_clear = true;
+}
+
+fn ensure_selected(state: &mut ListState, len: usize) {
+  if len == 0 {
+    state.select(None);
+    return;
+  }
+  let selected = state.selected().unwrap_or(0);
+  let clamped = selected.min(len.saturating_sub(1));
+  state.select(Some(clamped));
+}
+
+fn selected_index(state: &ListState, len: usize) -> usize {
+  if len == 0 {
+    return 0;
+  }
+  state.selected().unwrap_or(0).min(len.saturating_sub(1))
 }
 
 fn setup_terminal() -> Result<Terminal<CrosstermBackend<Stdout>>> {
   enable_raw_mode()?;
   let mut stdout = stdout();
-  execute!(stdout, terminal::EnterAlternateScreen)?;
+  execute!(stdout, terminal::EnterAlternateScreen, EnableMouseCapture)?;
+  let _ = execute!(
+    stdout,
+    PushKeyboardEnhancementFlags(
+      KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+        | KeyboardEnhancementFlags::REPORT_EVENT_TYPES
+        | KeyboardEnhancementFlags::REPORT_ALTERNATE_KEYS
+    )
+  );
   let backend = CrosstermBackend::new(stdout);
   Terminal::new(backend).map_err(|err| anyhow!("failed to init terminal: {err}"))
 }
 
 fn cleanup_terminal(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
   disable_raw_mode()?;
-  execute!(terminal.backend_mut(), terminal::LeaveAlternateScreen)?;
+  execute!(
+    terminal.backend_mut(),
+    DisableMouseCapture,
+    PopKeyboardEnhancementFlags,
+    terminal::LeaveAlternateScreen
+  )?;
   terminal.show_cursor()?;
   Ok(())
 }
@@ -806,6 +1440,28 @@ fn inner_rect(rect: Rect) -> Rect {
     y: rect.y.saturating_add(pad),
     width: rect.width.saturating_sub(pad * 2),
     height: rect.height.saturating_sub(pad * 2),
+  }
+}
+
+fn list_inner_rect(rect: Rect) -> Rect {
+  let pad = 1;
+  Rect {
+    x: rect.x.saturating_add(pad),
+    y: rect.y.saturating_add(pad),
+    width: rect.width.saturating_sub(pad * 2),
+    height: rect.height.saturating_sub(pad * 2),
+  }
+}
+
+fn select_index_at_row(state: &mut ListState, rect: Rect, row: u16, len: usize) {
+  if len == 0 || rect.height == 0 {
+    return;
+  }
+  let offset = state.offset();
+  let relative = row.saturating_sub(rect.y) as usize;
+  let index = offset.saturating_add(relative);
+  if index < len {
+    state.select(Some(index));
   }
 }
 

@@ -51,8 +51,8 @@ Quiet mode:
 - `-q` suppresses most external output.
 
 **`browse`**  
-Pick a theme in a full‑screen list. If `preview.png` (case-insensitive) exists in the theme folder it will show on the right; otherwise it falls back to `theme.png` (case-insensitive) or the first image in `backgrounds/`.  
-Then choose Waybar (default, theme, or named), then Starship (default, preset, or user theme).
+Pick a theme in a full‑screen tabbed picker with a Review tab for apply. If `preview.png` (case-insensitive) exists in the theme folder it will show on the right; otherwise it falls back to `theme.png` (case-insensitive) or the first image in `backgrounds/`.  
+Tabs: Theme, Waybar, Starship, Review. Apply with Ctrl+Enter.
 
 **`next` / `current` / `bg-next`**  
 `next` switches to the next theme in sorted order.  
@@ -117,11 +117,11 @@ This tool calls Omarchy’s scripts to stay compatible. It runs:
 
 Order of operations (simplified):
 1) Update the current theme link.
-2) Run `omarchy-theme-bg-next`.
-3) Reload components (terminals, Waybar, notifications, Hyprland, mako).
-4) Run Omarchy app-specific theme setters.
-5) Trigger the Omarchy theme hook.
-6) Apply Waybar theme if requested.
+2) Apply Waybar + Starship config (if selected).
+3) Update the background (Omarchy bg-next or `awww` transition).
+4) Reload components (terminals, Waybar, notifications, Hyprland, mako).
+5) Run Omarchy app-specific theme setters.
+6) Trigger the Omarchy theme hook.
 
 ## Configuration
 You can set defaults in either file:
@@ -137,6 +137,20 @@ TOML sections (all optional):
 - `[starship]` for preset/named defaults
 - `[behavior]` for quiet defaults and optional `awww` transitions (supports auto-start)
 
+Example (awww transitions):
+```
+[behavior]
+awww_transition = true
+awww_transition_type = "grow"
+awww_transition_duration = 2.4
+awww_transition_angle = 35
+awww_transition_fps = 60
+awww_transition_pos = "center"
+awww_transition_bezier = ".42,0,.2,1"
+awww_transition_wave = "28,12"
+awww_auto_start = false
+```
+
 Precedence order: CLI flags > env vars > local config > user config > defaults.
 
 Use `theme-manager print-config` to see resolved values.
@@ -144,6 +158,7 @@ Use `theme-manager print-config` to see resolved values.
 Environment flags (optional):
 - `THEME_MANAGER_SKIP_APPS=1` skips app reloads and setters (fast, but not full parity).
 - `THEME_MANAGER_SKIP_HOOK=1` skips `omarchy-hook theme-set`.
+Awkward but useful: set `THEME_MANAGER_AWWW_*` to override any awww transition field (see `config.toml.example`).
 
 ## Omarchy App Launcher Integration
 Theme Manager Plus integrates as a TUI app in Omarchy’s app launcher. This gives you

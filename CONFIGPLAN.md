@@ -36,6 +36,9 @@
 - [x] `[behavior].awww_transition_duration` (seconds float)
 - [x] `[behavior].awww_transition_angle` (degrees float)
 - [x] `[behavior].awww_transition_fps` (integer)
+- [x] `[behavior].awww_transition_pos` (string)
+- [x] `[behavior].awww_transition_bezier` (string)
+- [x] `[behavior].awww_transition_wave` (string)
 - [x] `[behavior].awww_auto_start` (true/false)
 
 ## 5) Load Order Logic
