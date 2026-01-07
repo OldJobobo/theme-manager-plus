@@ -12,4 +12,4 @@ Highlights
 Details
 - Waybar exec restart built into the Rust binary, with automatic fallback to copy mode when needed.
 - Starship supports presets, named themes, and theme-provided configs (`starship.yaml`).
-- Awww-powered background transitions with additional transition options and auto-start support.
+- Awww-powered background transitions with additional transition options (used only when `awww` and its daemon are available; not auto-started).

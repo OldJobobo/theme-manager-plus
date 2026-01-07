@@ -16,7 +16,7 @@ Requirements:
 - Omarchy scripts available in PATH (or set `OMARCHY_BIN_DIR` in config).
 - `starship` is optional (only needed for preset selection or applying Starship presets).
 - `kitty` or `chafa` is optional for browse previews (text fallback otherwise).
-- `awww` is optional for wallpaper transition animations (used if installed).
+- `awww` is optional for wallpaper transition animations (used if installed; the daemon is not auto-started).
 
 Common commands:
 - `theme-manager list` — show available themes.
@@ -153,7 +153,7 @@ TOML sections (all optional):
 - `[paths]` for theme, waybar, and starship locations
 - `[waybar]` for apply mode and defaults
 - `[starship]` for preset/named defaults
-- `[behavior]` for quiet defaults and optional `awww` transitions (supports auto-start)
+- `[behavior]` for quiet defaults and optional `awww` transitions (daemon must already be running)
 
 Example (awww transitions):
 ```

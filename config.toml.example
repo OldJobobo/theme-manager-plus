@@ -47,6 +47,6 @@
 # awww_transition_pos = "center"
 # awww_transition_bezier = ".54,0,.34,.99"
 # awww_transition_wave = "20,20"
-# awww_auto_start = false
+# awww_auto_start = false # reserved (theme-manager does not auto-start awww-daemon)
 
 # Presets are stored separately in ~/.config/theme-manager/presets.toml
