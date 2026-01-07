@@ -22,6 +22,7 @@ pub enum Command {
   Install(InstallArgs),
   Update,
   Remove(RemoveArgs),
+  Preset(PresetArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -42,6 +43,7 @@ pub struct NextArgs {
 }
 
 #[derive(Parser, Debug)]
+#[command(about = "Interactive picker (press / to search, Esc to clear).")]
 pub struct BrowseArgs {
   #[arg(short = 'q', long = "quiet")]
   pub quiet: bool,
@@ -55,4 +57,43 @@ pub struct InstallArgs {
 #[derive(Parser, Debug)]
 pub struct RemoveArgs {
   pub theme: Option<String>,
+}
+
+#[derive(Parser, Debug)]
+pub struct PresetArgs {
+  #[command(subcommand)]
+  pub command: PresetCommand,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum PresetCommand {
+  Save(PresetSaveArgs),
+  Load(PresetLoadArgs),
+  List,
+  Remove(PresetRemoveArgs),
+}
+
+#[derive(Parser, Debug)]
+pub struct PresetSaveArgs {
+  pub name: String,
+  #[arg(long)]
+  pub theme: Option<String>,
+  #[arg(long, value_name = "MODE|NAME")]
+  pub waybar: Option<String>,
+  #[arg(long, value_name = "MODE|NAME")]
+  pub starship: Option<String>,
+}
+
+#[derive(Parser, Debug)]
+pub struct PresetLoadArgs {
+  pub name: String,
+  #[arg(short = 'w', long = "waybar", num_args = 0..=1, value_name = "NAME")]
+  pub waybar: Option<Option<String>>,
+  #[arg(short = 'q', long = "quiet")]
+  pub quiet: bool,
+}
+
+#[derive(Parser, Debug)]
+pub struct PresetRemoveArgs {
+  pub name: String,
 }

@@ -4,6 +4,9 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 - Added tabbed browse workflow with review/apply step, mouse focus, and improved key handling.
+- Added fuzzy search in the browse picker lists (Theme/Waybar/Starship) with `/` to search.
+- Added preset save/load/list/remove commands with TOML storage and a new Presets tab in the TUI.
+- Added Review-screen preset save shortcut (Ctrl+S) and a single-line status bar in the TUI.
 - Added new awww transition presets and expanded awww transition configuration options.
 - Improved preview rendering and clearing behavior in the TUI.
 - Added awww-backed wallpaper transitions with theme background cycling, daemon auto-start, and debug logging support.

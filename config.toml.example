@@ -48,3 +48,5 @@
 # awww_transition_bezier = ".54,0,.34,.99"
 # awww_transition_wave = "20,20"
 # awww_auto_start = false
+
+# Presets are stored separately in ~/.config/theme-manager/presets.toml

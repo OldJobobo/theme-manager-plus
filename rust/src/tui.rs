@@ -6,6 +6,7 @@ use crossterm::event::{
 };
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use crossterm::{execute, terminal};
+use fuzzy_matcher::{skim::SkimMatcherV2, FuzzyMatcher};
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout, Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -28,7 +29,9 @@ use syntect::util::as_24_bit_terminal_escaped;
 use tempfile::TempDir;
 
 use crate::config::ResolvedConfig;
-use crate::paths::title_case_theme;
+use crate::paths::{normalize_theme_name, title_case_theme};
+use crate::theme_ops::{starship_from_defaults, waybar_from_defaults, StarshipMode, WaybarMode};
+use crate::presets;
 use crate::preview;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,6 +45,7 @@ enum BrowseTab {
   Theme,
   Waybar,
   Starship,
+  Presets,
   Review,
 }
 
@@ -81,6 +85,10 @@ struct PickerState {
   focus: FocusArea,
   image_visible: bool,
   force_clear: bool,
+  search_query: String,
+  search_active: bool,
+  filtered_indices: Vec<usize>,
+  last_selected: Option<usize>,
 }
 
 impl PickerState {
@@ -99,6 +107,10 @@ impl PickerState {
       focus: FocusArea::List,
       image_visible: false,
       force_clear: false,
+      search_query: String::new(),
+      search_active: false,
+      filtered_indices: Vec::new(),
+      last_selected: None,
     }
   }
 }
@@ -220,40 +232,54 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
   let backend = PreviewBackend::detect();
   let mut terminal = setup_terminal()?;
   let mut tab = BrowseTab::Theme;
-  let tab_titles = ["Theme", "Waybar", "Starship", "Review"];
+  let tab_titles = ["Theme", "Waybar", "Starship", "Presets", "Review"];
   let mut tab_ranges: Vec<(u16, u16, usize)> = Vec::new();
   let mut active_list_inner = Rect::ZERO;
   let mut active_code_inner = Rect::ZERO;
   let mut active_code_area = Rect::ZERO;
   let mut tab_area = Rect::ZERO;
+  let mut status_area = Rect::ZERO;
   let mut last_repeat_key: Option<(KeyCode, KeyModifiers)> = None;
   let mut last_repeat_at = Instant::now();
   let mut last_press_key: Option<(KeyCode, KeyModifiers, Instant)> = None;
   let mut status_message = String::new();
   let mut status_tab = BrowseTab::Theme;
   let mut status_at = Instant::now();
+  let mut preset_save_active = false;
+  let mut preset_save_input = String::new();
 
   let mut theme_state = PickerState::new();
-  ensure_selected(&mut theme_state.list_state, theme_items.len());
-  let mut selected_theme = current_theme_value(&theme_items, &theme_state.list_state)?;
+  rebuild_filtered(&mut theme_state, &theme_items);
+  let mut selected_theme = current_theme_value(&theme_items, &theme_state)
+    .ok_or_else(|| anyhow!("no themes available"))?;
   let mut theme_path = config.theme_root_dir.join(&selected_theme);
 
   let mut waybar_items = build_waybar_items(config, &theme_path)?;
   let mut starship_items = build_starship_items(config, &theme_path)?;
   let mut waybar_state = PickerState::new();
   let mut starship_state = PickerState::new();
-  ensure_selected(&mut waybar_state.list_state, waybar_items.len());
-  ensure_selected(&mut starship_state.list_state, starship_items.len());
+  rebuild_filtered(&mut waybar_state, &waybar_items);
+  rebuild_filtered(&mut starship_state, &starship_items);
+
+  let mut preset_file = presets::load_presets()?;
+  let mut preset_items = build_preset_items(&preset_file);
+  let mut preset_state = PickerState::new();
+  rebuild_filtered(&mut preset_state, &preset_items);
 
   loop {
     terminal.draw(|frame| {
       let size = frame.area();
       let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(3), Constraint::Min(0)].as_ref())
+        .constraints([
+          Constraint::Length(3),
+          Constraint::Min(0),
+          Constraint::Length(1),
+        ])
         .split(size);
       tab_area = chunks[0];
       let content_area = chunks[1];
+      status_area = chunks[2];
 
       render_tab_bar(frame, tab_area, &tab_titles, tab, &mut tab_ranges);
       let status_active = !status_message.is_empty()
@@ -336,6 +362,23 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
           active_code_inner = areas.code_inner;
           active_code_area = areas.code_area;
         }
+        BrowseTab::Presets => {
+          let areas = render_preset_picker(
+            frame,
+            content_area,
+            &preset_items,
+            &mut preset_state,
+            |idx| preset_summary_text(config, &preset_file, &preset_items[idx]),
+            if status_active && status_tab == BrowseTab::Presets {
+              Some(status_message.as_str())
+            } else {
+              None
+            },
+          );
+          active_list_inner = areas.list_inner;
+          active_code_inner = areas.code_inner;
+          active_code_area = areas.code_area;
+        }
         BrowseTab::Review => {
           active_list_inner = Rect::ZERO;
           active_code_inner = Rect::ZERO;
@@ -344,11 +387,23 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
             frame,
             content_area,
             &selected_theme,
-            current_waybar_label(&waybar_items, &waybar_state.list_state),
-            current_starship_label(&starship_items, &starship_state.list_state),
+            current_waybar_label(&waybar_items, &waybar_state),
+            current_starship_label(&starship_items, &starship_state),
           );
         }
       }
+
+      render_status_bar(
+        frame,
+        status_area,
+        tab,
+        &selected_theme,
+        current_waybar_label(&waybar_items, &waybar_state),
+        current_starship_label(&starship_items, &starship_state),
+        status_active.then_some(status_message.as_str()),
+        preset_save_active,
+        &preset_save_input,
+      );
     })?;
 
     if event::poll(Duration::from_millis(200))? {
@@ -358,6 +413,69 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
             continue;
           }
           let now = Instant::now();
+          if preset_save_active {
+            if key.kind == KeyEventKind::Repeat {
+              continue;
+            }
+            match key.code {
+              KeyCode::Esc => {
+                preset_save_active = false;
+                preset_save_input.clear();
+                status_tab = BrowseTab::Review;
+                status_at = Instant::now();
+                status_message = "Preset save canceled".to_string();
+              }
+              KeyCode::Enter => {
+                let name = preset_save_input.trim();
+                status_tab = BrowseTab::Review;
+                status_at = Instant::now();
+                if name.is_empty() {
+                  status_message = "Preset name required".to_string();
+                } else {
+                  let entry = build_preset_entry_from_selection(
+                    config,
+                    &selected_theme,
+                    current_waybar_selection(&waybar_items, &waybar_state),
+                    current_starship_selection(
+                      &starship_items,
+                      &starship_state,
+                      &theme_path,
+                    ),
+                  );
+                  match presets::save_preset(name, entry, config) {
+                    Ok(()) => {
+                      status_message = "Preset saved".to_string();
+                      preset_file = presets::load_presets()?;
+                      preset_items = build_preset_items(&preset_file);
+                      reset_picker_cache(&mut preset_state);
+                      rebuild_filtered(&mut preset_state, &preset_items);
+                      select_preset_by_name(&mut preset_state, &preset_items, name);
+                    }
+                    Err(err) => {
+                      status_message = err.to_string();
+                    }
+                  }
+                }
+                preset_save_active = false;
+                preset_save_input.clear();
+              }
+              KeyCode::Backspace => {
+                preset_save_input.pop();
+              }
+              KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                preset_save_input.clear();
+              }
+              KeyCode::Char(ch) => {
+                if !key.modifiers.contains(KeyModifiers::CONTROL)
+                  && !key.modifiers.contains(KeyModifiers::ALT)
+                {
+                  preset_save_input.push(ch);
+                }
+              }
+              _ => {}
+            }
+            continue;
+          }
           let is_repeat = key.kind == event::KeyEventKind::Repeat;
           if is_repeat {
             if let Some((last_code, last_mod, last_at)) = last_press_key {
@@ -379,6 +497,79 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
           } else {
             last_press_key = Some((key.code, key.modifiers, now));
           }
+          if let Some(state) =
+            active_picker_mut(
+              tab,
+              &mut theme_state,
+              &mut waybar_state,
+              &mut starship_state,
+              &mut preset_state,
+            )
+          {
+            if key.code == KeyCode::Char('/')
+              && !state.search_active
+              && tab != BrowseTab::Review
+            {
+              state.search_active = true;
+              state.search_query.clear();
+              rebuild_active_filtered(
+                tab,
+                &mut theme_state,
+                &mut waybar_state,
+                &mut starship_state,
+                &mut preset_state,
+                &theme_items,
+                &waybar_items,
+                &starship_items,
+                &preset_items,
+              );
+              continue;
+            }
+            if state.search_active && tab != BrowseTab::Review {
+              let mut handled = true;
+              match key.code {
+                KeyCode::Esc => {
+                  state.search_active = false;
+                  state.search_query.clear();
+                }
+                KeyCode::Enter => {
+                  state.search_active = false;
+                }
+                KeyCode::Backspace => {
+                  state.search_query.pop();
+                }
+                KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                  state.search_query.clear();
+                }
+                KeyCode::Char(ch) => {
+                  if !key.modifiers.contains(KeyModifiers::CONTROL)
+                    && !key.modifiers.contains(KeyModifiers::ALT)
+                  {
+                    state.search_query.push(ch);
+                  } else {
+                    handled = false;
+                  }
+                }
+                _ => {
+                  handled = false;
+                }
+              }
+              if handled {
+                rebuild_active_filtered(
+                  tab,
+                  &mut theme_state,
+                  &mut waybar_state,
+                  &mut starship_state,
+                  &mut preset_state,
+                  &theme_items,
+                  &waybar_items,
+                  &starship_items,
+                  &preset_items,
+                );
+                continue;
+              }
+            }
+          }
           if key.code == KeyCode::Char('q') || key.code == KeyCode::Esc {
             cleanup_terminal(&mut terminal)?;
             return Ok(None);
@@ -386,13 +577,43 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
           if key.code == KeyCode::Tab {
             tab = previous_tab(tab);
             clear_kitty_preview(&backend);
-            mark_force_clear(&mut theme_state, &mut waybar_state, &mut starship_state);
+            mark_force_clear(
+              &mut theme_state,
+              &mut waybar_state,
+              &mut starship_state,
+              &mut preset_state,
+            );
+            stop_search(
+              &mut theme_state,
+              &mut waybar_state,
+              &mut starship_state,
+              &mut preset_state,
+            );
             continue;
           }
           if key.code == KeyCode::BackTab {
             tab = next_tab(tab);
             clear_kitty_preview(&backend);
-            mark_force_clear(&mut theme_state, &mut waybar_state, &mut starship_state);
+            mark_force_clear(
+              &mut theme_state,
+              &mut waybar_state,
+              &mut starship_state,
+              &mut preset_state,
+            );
+            stop_search(
+              &mut theme_state,
+              &mut waybar_state,
+              &mut starship_state,
+              &mut preset_state,
+            );
+            continue;
+          }
+          if tab == BrowseTab::Review
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+            && key.code == KeyCode::Char('s')
+          {
+            preset_save_active = true;
+            preset_save_input.clear();
             continue;
           }
           if tab == BrowseTab::Review
@@ -401,15 +622,41 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
           {
             let selection = BrowseSelection {
               theme: selected_theme.clone(),
-              waybar: current_waybar_selection(&waybar_items, &waybar_state.list_state),
+              waybar: current_waybar_selection(&waybar_items, &waybar_state),
               starship: current_starship_selection(
                 &starship_items,
-                &starship_state.list_state,
+                &starship_state,
                 &theme_path,
               ),
             };
             cleanup_terminal(&mut terminal)?;
             return Ok(Some(selection));
+          }
+          if key.code == KeyCode::Enter && tab == BrowseTab::Presets {
+            status_tab = tab;
+            status_at = Instant::now();
+            match apply_preset_to_states(
+              config,
+              &preset_items,
+              &mut preset_state,
+              &theme_items,
+              &mut theme_state,
+              &mut selected_theme,
+              &mut theme_path,
+              &mut waybar_items,
+              &mut waybar_state,
+              &mut starship_items,
+              &mut starship_state,
+            ) {
+              Ok(()) => {
+                status_message = "Preset loaded".to_string();
+                tab = BrowseTab::Review;
+              }
+              Err(err) => {
+                status_message = err.to_string();
+              }
+            }
+            continue;
           }
           if key.code == KeyCode::Enter && tab != BrowseTab::Review {
             status_tab = tab;
@@ -418,14 +665,29 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
               BrowseTab::Theme => "Theme selected".to_string(),
               BrowseTab::Waybar => "Waybar selected".to_string(),
               BrowseTab::Starship => "Starship selected".to_string(),
+              BrowseTab::Presets => "Preset selected".to_string(),
               BrowseTab::Review => String::new(),
             };
             tab = next_tab(tab);
             continue;
           }
 
-          if let Some(state) = active_picker_mut(tab, &mut theme_state, &mut waybar_state, &mut starship_state) {
-            let items_len = active_items_len(tab, &theme_items, &waybar_items, &starship_items);
+          let items_len = match tab {
+            BrowseTab::Theme => theme_state.filtered_indices.len(),
+            BrowseTab::Waybar => waybar_state.filtered_indices.len(),
+            BrowseTab::Starship => starship_state.filtered_indices.len(),
+            BrowseTab::Presets => preset_state.filtered_indices.len(),
+            BrowseTab::Review => 0,
+          };
+          if let Some(state) =
+            active_picker_mut(
+              tab,
+              &mut theme_state,
+              &mut waybar_state,
+              &mut starship_state,
+              &mut preset_state,
+            )
+          {
             match key.code {
               KeyCode::Up | KeyCode::Char('k') | KeyCode::Char('h') => match state.focus {
                 FocusArea::List => {
@@ -486,13 +748,37 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
               if let Some(index) = tab_index_from_click(&tab_ranges, mouse.column) {
                 tab = tab_from_index(index);
                 clear_kitty_preview(&backend);
-                mark_force_clear(&mut theme_state, &mut waybar_state, &mut starship_state);
+                mark_force_clear(
+                  &mut theme_state,
+                  &mut waybar_state,
+                  &mut starship_state,
+                  &mut preset_state,
+                );
+                stop_search(
+                  &mut theme_state,
+                  &mut waybar_state,
+                  &mut starship_state,
+                  &mut preset_state,
+                );
                 continue;
               }
             }
 
+            let items_len = match tab {
+              BrowseTab::Theme => theme_state.filtered_indices.len(),
+              BrowseTab::Waybar => waybar_state.filtered_indices.len(),
+              BrowseTab::Starship => starship_state.filtered_indices.len(),
+              BrowseTab::Presets => preset_state.filtered_indices.len(),
+              BrowseTab::Review => 0,
+            };
             if let Some(state) =
-              active_picker_mut(tab, &mut theme_state, &mut waybar_state, &mut starship_state)
+              active_picker_mut(
+                tab,
+                &mut theme_state,
+                &mut waybar_state,
+                &mut starship_state,
+                &mut preset_state,
+              )
             {
               let position = Position {
                 x: mouse.column,
@@ -500,7 +786,6 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
               };
               if active_list_inner.contains(position) {
                 state.focus = FocusArea::List;
-                let items_len = active_items_len(tab, &theme_items, &waybar_items, &starship_items);
                 select_index_at_row(
                   &mut state.list_state,
                   active_list_inner,
@@ -513,8 +798,21 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
             }
           }
           MouseEventKind::ScrollUp => {
+            let items_len = match tab {
+              BrowseTab::Theme => theme_state.filtered_indices.len(),
+              BrowseTab::Waybar => waybar_state.filtered_indices.len(),
+              BrowseTab::Starship => starship_state.filtered_indices.len(),
+              BrowseTab::Presets => preset_state.filtered_indices.len(),
+              BrowseTab::Review => 0,
+            };
             if let Some(state) =
-              active_picker_mut(tab, &mut theme_state, &mut waybar_state, &mut starship_state)
+              active_picker_mut(
+                tab,
+                &mut theme_state,
+                &mut waybar_state,
+                &mut starship_state,
+                &mut preset_state,
+              )
             {
               let position = Position {
                 x: mouse.column,
@@ -522,7 +820,6 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
               };
               if active_list_inner.contains(position) {
                 state.focus = FocusArea::List;
-                let items_len = active_items_len(tab, &theme_items, &waybar_items, &starship_items);
                 let new_index = previous_index(state.list_state.selected(), items_len);
                 state.list_state.select(Some(new_index));
               } else if active_code_inner.contains(position) {
@@ -532,8 +829,21 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
             }
           }
           MouseEventKind::ScrollDown => {
+            let items_len = match tab {
+              BrowseTab::Theme => theme_state.filtered_indices.len(),
+              BrowseTab::Waybar => waybar_state.filtered_indices.len(),
+              BrowseTab::Starship => starship_state.filtered_indices.len(),
+              BrowseTab::Presets => preset_state.filtered_indices.len(),
+              BrowseTab::Review => 0,
+            };
             if let Some(state) =
-              active_picker_mut(tab, &mut theme_state, &mut waybar_state, &mut starship_state)
+              active_picker_mut(
+                tab,
+                &mut theme_state,
+                &mut waybar_state,
+                &mut starship_state,
+                &mut preset_state,
+              )
             {
               let position = Position {
                 x: mouse.column,
@@ -541,7 +851,6 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
               };
               if active_list_inner.contains(position) {
                 state.focus = FocusArea::List;
-                let items_len = active_items_len(tab, &theme_items, &waybar_items, &starship_items);
                 let new_index = next_index(state.list_state.selected(), items_len);
                 state.list_state.select(Some(new_index));
               } else if active_code_inner.contains(position) {
@@ -556,23 +865,29 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
       }
     }
 
-    let new_theme = current_theme_value(&theme_items, &theme_state.list_state)?;
-    if new_theme != selected_theme {
-      selected_theme = new_theme;
-      theme_path = config.theme_root_dir.join(&selected_theme);
-      let waybar_key = selected_item_key(&waybar_items, &waybar_state.list_state);
-      let starship_key = selected_item_key(&starship_items, &starship_state.list_state);
+    if let Some(new_theme) = current_theme_value(&theme_items, &theme_state) {
+      if new_theme != selected_theme {
+        selected_theme = new_theme;
+        theme_path = config.theme_root_dir.join(&selected_theme);
+        let waybar_key = selected_item_key(&waybar_items, &waybar_state);
+        let starship_key = selected_item_key(&starship_items, &starship_state);
 
-      waybar_items = build_waybar_items(config, &theme_path)?;
-      starship_items = build_starship_items(config, &theme_path)?;
+        waybar_items = build_waybar_items(config, &theme_path)?;
+        starship_items = build_starship_items(config, &theme_path)?;
 
-      reset_picker_cache(&mut waybar_state);
-      reset_picker_cache(&mut starship_state);
+        reset_picker_cache(&mut waybar_state);
+        reset_picker_cache(&mut starship_state);
 
-      select_item_by_key(&mut waybar_state.list_state, &waybar_items, waybar_key);
-      select_item_by_key(&mut starship_state.list_state, &starship_items, starship_key);
-      ensure_selected(&mut waybar_state.list_state, waybar_items.len());
-      ensure_selected(&mut starship_state.list_state, starship_items.len());
+        rebuild_filtered(&mut waybar_state, &waybar_items);
+        rebuild_filtered(&mut starship_state, &starship_items);
+        select_item_by_key(&mut waybar_state, &waybar_items, waybar_key);
+        select_item_by_key(&mut starship_state, &starship_items, starship_key);
+        ensure_selected(&mut waybar_state.list_state, waybar_state.filtered_indices.len());
+        ensure_selected(
+          &mut starship_state.list_state,
+          starship_state.filtered_indices.len(),
+        );
+      }
     }
   }
 }
@@ -602,12 +917,23 @@ struct LabeledItem {
   preview: Option<PathBuf>,
 }
 
+struct PresetItem {
+  label: String,
+  name: String,
+}
+
 fn build_waybar_items(config: &ResolvedConfig, theme_path: &Path) -> Result<Vec<LabeledItem>> {
   let mut items = Vec::new();
   items.push(OptionItem::with_kind(
     "Omarchy default".to_string(),
     "default".to_string(),
     "default",
+    None,
+  ));
+  items.push(OptionItem::with_kind(
+    "No waybar changes".to_string(),
+    "none".to_string(),
+    "none",
     None,
   ));
 
@@ -643,6 +969,12 @@ fn build_starship_items(config: &ResolvedConfig, theme_path: &Path) -> Result<Ve
     "default",
     None,
   ));
+  items.push(OptionItem::with_kind(
+    "No Starship changes".to_string(),
+    "none".to_string(),
+    "none",
+    None,
+  ));
 
   if theme_path.join("starship.yaml").is_file() {
     items.push(OptionItem::with_kind(
@@ -674,6 +1006,18 @@ fn build_starship_items(config: &ResolvedConfig, theme_path: &Path) -> Result<Ve
   Ok(items)
 }
 
+fn build_preset_items(file: &presets::PresetFile) -> Vec<PresetItem> {
+  let mut names: Vec<String> = file.preset.keys().cloned().collect();
+  names.sort();
+  names
+    .into_iter()
+    .map(|name| PresetItem {
+      label: name.clone(),
+      name,
+    })
+    .collect()
+}
+
 fn build_waybar_code_preview(
   config: &ResolvedConfig,
   theme_path: &Path,
@@ -681,6 +1025,7 @@ fn build_waybar_code_preview(
 ) -> Text<'static> {
   match item.kind.as_str() {
     "default" => Text::from("Using Omarchy default Waybar config."),
+    "none" => Text::from("No Waybar changes."),
     "theme" => {
       let base = theme_path.join("waybar-theme");
       let parts = vec![
@@ -707,6 +1052,7 @@ fn build_starship_code_preview(
 ) -> Text<'static> {
   match item.kind.as_str() {
     "default" => Text::from("No Starship config change."),
+    "none" => Text::from("No Starship config change."),
     "theme" => load_code_preview(
       "starship.yaml",
       theme_path.join("starship.yaml"),
@@ -808,7 +1154,7 @@ fn render_starship_prompt_preview(
   theme_path: &Path,
   item: &LabeledItem,
 ) -> Text<'static> {
-  if item.kind.as_str() == "default" {
+  if item.kind.as_str() == "default" || item.kind.as_str() == "none" {
     return Text::from("No Starship config change.\n\nThe current Omarchy theme prompt will be used.");
   }
 
@@ -1024,15 +1370,12 @@ fn render_picker<T: ItemView>(
   let code_area = top_chunks[1];
   let code_inner = inner_rect(code_area);
 
-  let list_items: Vec<ListItem> = items
+  let list_items: Vec<ListItem> = state
+    .filtered_indices
     .iter()
-    .map(|item| ListItem::new(Line::from(item.label())))
+    .map(|&idx| ListItem::new(Line::from(items[idx].label())))
     .collect();
-  let list_title = if let Some(status) = status {
-    format!("{title}  [{status}]")
-  } else {
-    title.to_string()
-  };
+  let list_title = build_list_title(title, status, state);
   let list_block = Block::default()
     .title(list_title)
     .borders(Borders::ALL)
@@ -1052,15 +1395,24 @@ fn render_picker<T: ItemView>(
     .highlight_symbol(">> ");
   frame.render_stateful_widget(list, list_area, &mut state.list_state);
 
-  let selected = selected_index(&state.list_state, items.len());
-  let preview_path = items
-    .get(selected)
-    .and_then(|_item| image_preview(selected));
+  let selected = selected_index(&state.list_state, state.filtered_indices.len());
+  let selected_item = state.filtered_indices.get(selected).copied();
+  let preview_path = selected_item.and_then(|idx| image_preview(idx));
 
-  if Some(selected) != state.last_code_index {
-    state.last_code = code_preview(selected);
-    state.code_scroll = 0;
-    state.last_code_index = Some(selected);
+  if let Some(item_index) = selected_item {
+    state.last_selected = Some(item_index);
+    if Some(item_index) != state.last_code_index {
+      state.last_code = code_preview(item_index);
+      state.code_scroll = 0;
+      state.last_code_index = Some(item_index);
+    }
+  } else {
+    state.last_code = Text::from("No matches.");
+    state.last_preview_text = Text::from("No matches.");
+    state.last_preview = None;
+    state.preview_dirty = true;
+    state.last_code_index = None;
+    state.last_preview_index = None;
   }
 
   let max_scroll = state
@@ -1085,21 +1437,23 @@ fn render_picker<T: ItemView>(
     .wrap(Wrap { trim: false });
   frame.render_widget(code, code_area);
 
-  if Some(selected) != state.last_preview_index {
-    if let Some(text) = preview_text(selected) {
-      state.last_preview_text = text;
-      if state.last_preview.is_some() {
-        state.preview_dirty = true;
+  if let Some(item_index) = selected_item {
+    if Some(item_index) != state.last_preview_index {
+      if let Some(text) = preview_text(item_index) {
+        state.last_preview_text = text;
+        if state.last_preview.is_some() {
+          state.preview_dirty = true;
+        }
+        state.last_preview = None;
+      } else {
+        state.last_preview_text = Text::from("");
+        if state.last_preview != preview_path {
+          state.last_preview = preview_path.clone();
+          state.preview_dirty = true;
+        }
       }
-      state.last_preview = None;
-    } else {
-      state.last_preview_text = Text::from("");
-      if state.last_preview != preview_path {
-        state.last_preview = preview_path.clone();
-        state.preview_dirty = true;
-      }
+      state.last_preview_index = Some(item_index);
     }
-    state.last_preview_index = Some(selected);
   }
 
   if state.force_clear {
@@ -1135,6 +1489,91 @@ fn render_picker<T: ItemView>(
   }
 }
 
+fn render_preset_picker(
+  frame: &mut Frame,
+  area: Rect,
+  items: &[PresetItem],
+  state: &mut PickerState,
+  summary: impl Fn(usize) -> Text<'static>,
+  status: Option<&str>,
+) -> PickerAreas {
+  let chunks = Layout::default()
+    .direction(Direction::Horizontal)
+    .constraints([Constraint::Percentage(30), Constraint::Percentage(70)].as_ref())
+    .split(area);
+  let list_area = chunks[0];
+  let list_inner = list_inner_rect(list_area);
+  let summary_area = chunks[1];
+  let summary_inner = inner_rect(summary_area);
+
+  let list_items: Vec<ListItem> = state
+    .filtered_indices
+    .iter()
+    .map(|&idx| ListItem::new(Line::from(items[idx].label())))
+    .collect();
+  let list_title = build_list_title("Select preset", status, state);
+  let list_block = Block::default()
+    .title(list_title)
+    .borders(Borders::ALL)
+    .border_style(if state.focus == FocusArea::List {
+      Style::default()
+        .fg(if status.is_some() {
+          Color::Green
+        } else {
+          Color::Yellow
+        })
+    } else {
+      Style::default()
+    });
+  let list = List::new(list_items)
+    .block(list_block)
+    .highlight_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+    .highlight_symbol(">> ");
+  frame.render_stateful_widget(list, list_area, &mut state.list_state);
+
+  let selected = selected_index(&state.list_state, state.filtered_indices.len());
+  let selected_item = state.filtered_indices.get(selected).copied();
+  if let Some(item_index) = selected_item {
+    state.last_selected = Some(item_index);
+    if Some(item_index) != state.last_code_index {
+      state.last_code = summary(item_index);
+      state.code_scroll = 0;
+      state.last_code_index = Some(item_index);
+    }
+  } else {
+    state.last_code = Text::from("No presets found.");
+    state.last_code_index = None;
+  }
+
+  let max_scroll = state
+    .last_code
+    .lines
+    .len()
+    .saturating_sub(summary_inner.height.max(1) as usize);
+  if state.code_scroll as usize > max_scroll {
+    state.code_scroll = max_scroll as u16;
+  }
+  let summary_block = Block::default()
+    .title("Preset Summary")
+    .borders(Borders::ALL)
+    .border_style(if state.focus == FocusArea::Code {
+      Style::default().fg(Color::Yellow)
+    } else {
+      Style::default()
+    });
+  let summary_panel = Paragraph::new(state.last_code.clone())
+    .block(summary_block)
+    .scroll((state.code_scroll, 0))
+    .wrap(Wrap { trim: false });
+  frame.render_widget(summary_panel, summary_area);
+
+  PickerAreas {
+    list_inner,
+    code_inner: summary_inner,
+    code_area: summary_area,
+  }
+}
+
 fn render_review(
   frame: &mut Frame,
   area: Rect,
@@ -1157,6 +1596,120 @@ fn render_review(
     .block(Block::default().title("Review").borders(Borders::ALL))
     .wrap(Wrap { trim: false });
   frame.render_widget(review, area);
+}
+
+fn render_status_bar(
+  frame: &mut Frame,
+  area: Rect,
+  tab: BrowseTab,
+  theme: &str,
+  waybar: String,
+  starship: String,
+  status: Option<&str>,
+  save_active: bool,
+  save_input: &str,
+) {
+  let mut spans = Vec::new();
+  let tab_label = match tab {
+    BrowseTab::Theme => "Theme",
+    BrowseTab::Waybar => "Waybar",
+    BrowseTab::Starship => "Starship",
+    BrowseTab::Presets => "Presets",
+    BrowseTab::Review => "Review",
+  };
+
+  push_status_segment(&mut spans, tab_label, Color::Black, Color::Yellow);
+  push_status_sep(&mut spans);
+  push_status_segment(
+    &mut spans,
+    &format!("Theme: {}", title_case_theme(theme)),
+    Color::Black,
+    Color::Cyan,
+  );
+  push_status_sep(&mut spans);
+  push_status_segment(&mut spans, &format!("Waybar: {waybar}"), Color::Black, Color::Green);
+  push_status_sep(&mut spans);
+  push_status_segment(
+    &mut spans,
+    &format!("Starship: {starship}"),
+    Color::Black,
+    Color::Magenta,
+  );
+
+  if tab == BrowseTab::Review && !save_active {
+    push_status_sep(&mut spans);
+    push_status_segment(
+      &mut spans,
+      "Ctrl+Enter Apply",
+      Color::Black,
+      Color::LightYellow,
+    );
+    push_status_sep(&mut spans);
+    push_status_segment(
+      &mut spans,
+      "Ctrl+S Save Preset",
+      Color::Black,
+      Color::LightYellow,
+    );
+  }
+
+  if save_active {
+    let cursor = "_";
+    push_status_sep(&mut spans);
+    push_status_segment(
+      &mut spans,
+      &format!("Save preset: {save_input}{cursor}"),
+      Color::Black,
+      Color::Blue,
+    );
+  }
+
+  if let Some(message) = status {
+    push_status_sep(&mut spans);
+    push_status_segment(&mut spans, message, Color::Black, Color::LightBlue);
+  }
+
+  let line = Line::from(spans);
+  let bar = Paragraph::new(line);
+  frame.render_widget(bar, area);
+}
+
+fn push_status_segment(spans: &mut Vec<Span<'static>>, label: &str, fg: Color, bg: Color) {
+  spans.push(Span::styled(
+    format!(" {} ", label),
+    Style::default().fg(fg).bg(bg).add_modifier(Modifier::BOLD),
+  ));
+}
+
+fn push_status_sep(spans: &mut Vec<Span<'static>>) {
+  spans.push(Span::styled(">", Style::default().fg(Color::DarkGray)));
+}
+
+fn preset_summary_text(
+  config: &ResolvedConfig,
+  file: &presets::PresetFile,
+  item: &PresetItem,
+) -> Text<'static> {
+  let entry = match file.preset.get(&item.name) {
+    Some(entry) => entry,
+    None => return Text::from("Preset not found."),
+  };
+  let summary = presets::summarize_preset(config, &item.name, entry);
+  let mut lines = vec![
+    Line::from(format!("Preset: {}", item.name)),
+    Line::from(""),
+    Line::from(format!("Theme: {}", summary.theme)),
+    Line::from(format!("Waybar: {}", summary.waybar)),
+    Line::from(format!("Starship: {}", summary.starship)),
+  ];
+  if !summary.errors.is_empty() {
+    lines.push(Line::from(""));
+    lines.push(Line::from("Issues:"));
+    for err in summary.errors {
+      lines.push(Line::from(format!("- {}", err)));
+    }
+  }
+  Text::from(lines)
 }
 
 fn render_tab_bar(
@@ -1200,6 +1753,21 @@ fn render_tab_bar(
   frame.render_widget(tabs, inner);
 }
 
+fn build_list_title(title: &str, status: Option<&str>, state: &PickerState) -> String {
+  let mut out = match status {
+    Some(status) => format!("{title}  [{status}]"),
+    None => title.to_string(),
+  };
+  if state.search_active || !state.search_query.is_empty() {
+    let cursor = if state.search_active { "_" } else { "" };
+    out.push_str("  [search: ");
+    out.push_str(&state.search_query);
+    out.push_str(cursor);
+    out.push(']');
+  }
+  out
+}
+
 fn clear_kitty_preview(backend: &PreviewBackend) {
   if matches!(backend.kind, PreviewBackendKind::Kitty) {
     let _ = Command::new("kitty")
@@ -1212,10 +1780,24 @@ fn mark_force_clear(
   theme: &mut PickerState,
   waybar: &mut PickerState,
   starship: &mut PickerState,
+  presets: &mut PickerState,
 ) {
   theme.force_clear = true;
   waybar.force_clear = true;
   starship.force_clear = true;
+  presets.force_clear = true;
+}
+
+fn stop_search(
+  theme: &mut PickerState,
+  waybar: &mut PickerState,
+  starship: &mut PickerState,
+  presets: &mut PickerState,
+) {
+  theme.search_active = false;
+  waybar.search_active = false;
+  starship.search_active = false;
+  presets.search_active = false;
 }
 
 fn active_picker_mut<'a>(
@@ -1223,26 +1805,34 @@ fn active_picker_mut<'a>(
   theme: &'a mut PickerState,
   waybar: &'a mut PickerState,
   starship: &'a mut PickerState,
+  presets: &'a mut PickerState,
 ) -> Option<&'a mut PickerState> {
   match tab {
     BrowseTab::Theme => Some(theme),
     BrowseTab::Waybar => Some(waybar),
     BrowseTab::Starship => Some(starship),
+    BrowseTab::Presets => Some(presets),
     BrowseTab::Review => None,
   }
 }
 
-fn active_items_len(
+fn rebuild_active_filtered(
   tab: BrowseTab,
-  theme: &[OptionItem],
-  waybar: &[LabeledItem],
-  starship: &[LabeledItem],
-) -> usize {
+  theme: &mut PickerState,
+  waybar: &mut PickerState,
+  starship: &mut PickerState,
+  presets: &mut PickerState,
+  theme_items: &[OptionItem],
+  waybar_items: &[LabeledItem],
+  starship_items: &[LabeledItem],
+  preset_items: &[PresetItem],
+) {
   match tab {
-    BrowseTab::Theme => theme.len(),
-    BrowseTab::Waybar => waybar.len(),
-    BrowseTab::Starship => starship.len(),
-    BrowseTab::Review => 0,
+    BrowseTab::Theme => rebuild_filtered(theme, theme_items),
+    BrowseTab::Waybar => rebuild_filtered(waybar, waybar_items),
+    BrowseTab::Starship => rebuild_filtered(starship, starship_items),
+    BrowseTab::Presets => rebuild_filtered(presets, preset_items),
+    BrowseTab::Review => {}
   }
 }
 
@@ -1251,7 +1841,8 @@ fn tab_index(tab: BrowseTab) -> usize {
     BrowseTab::Theme => 0,
     BrowseTab::Waybar => 1,
     BrowseTab::Starship => 2,
-    BrowseTab::Review => 3,
+    BrowseTab::Presets => 3,
+    BrowseTab::Review => 4,
   }
 }
 
@@ -1260,16 +1851,17 @@ fn tab_from_index(index: usize) -> BrowseTab {
     0 => BrowseTab::Theme,
     1 => BrowseTab::Waybar,
     2 => BrowseTab::Starship,
+    3 => BrowseTab::Presets,
     _ => BrowseTab::Review,
   }
 }
 
 fn next_tab(tab: BrowseTab) -> BrowseTab {
-  tab_from_index((tab_index(tab) + 1) % 4)
+  tab_from_index((tab_index(tab) + 1) % 5)
 }
 
 fn previous_tab(tab: BrowseTab) -> BrowseTab {
-  tab_from_index((tab_index(tab) + 3) % 4)
+  tab_from_index((tab_index(tab) + 4) % 5)
 }
 
 fn tab_index_from_click(ranges: &[(u16, u16, usize)], column: u16) -> Option<usize> {
@@ -1279,56 +1871,250 @@ fn tab_index_from_click(ranges: &[(u16, u16, usize)], column: u16) -> Option<usi
     .map(|(_, _, idx)| *idx)
 }
 
-fn current_theme_value(items: &[OptionItem], state: &ListState) -> Result<String> {
-  if items.is_empty() {
-    return Err(anyhow!("no themes available"));
-  }
-  let index = selected_index(state, items.len());
-  Ok(items[index].value.clone())
+fn current_theme_value(items: &[OptionItem], state: &PickerState) -> Option<String> {
+  let index = selected_item_index(state, items.len())?;
+  Some(items[index].value.clone())
 }
 
-fn current_waybar_label(items: &[LabeledItem], state: &ListState) -> String {
-  if items.is_empty() {
-    return "No options".to_string();
+fn current_preset_name(items: &[PresetItem], state: &PickerState) -> Option<String> {
+  let index = selected_item_index(state, items.len())?;
+  Some(items[index].name.clone())
+}
+
+fn select_option_by_value(state: &mut PickerState, items: &[OptionItem], value: &str) -> bool {
+  if let Some(item_index) = items.iter().position(|item| item.value == value) {
+    if let Some(filtered_pos) = state
+      .filtered_indices
+      .iter()
+      .position(|&idx| idx == item_index)
+    {
+      state.list_state.select(Some(filtered_pos));
+      state.last_selected = Some(item_index);
+      return true;
+    }
   }
+  false
+}
+
+fn select_preset_by_name(state: &mut PickerState, items: &[PresetItem], name: &str) -> bool {
+  if let Some(item_index) = items.iter().position(|item| item.name == name) {
+    if let Some(filtered_pos) = state
+      .filtered_indices
+      .iter()
+      .position(|&idx| idx == item_index)
+    {
+      state.list_state.select(Some(filtered_pos));
+      state.last_selected = Some(item_index);
+      return true;
+    }
+  }
+  false
+}
+
+fn preset_waybar_key(preset: &presets::PresetDefinition) -> Option<(String, String)> {
+  match &preset.waybar {
+    presets::PresetWaybarValue::None => Some(("none".to_string(), "none".to_string())),
+    presets::PresetWaybarValue::Auto => Some(("theme".to_string(), "theme".to_string())),
+    presets::PresetWaybarValue::Named(name) => Some(("named".to_string(), name.clone())),
+  }
+}
+
+fn preset_starship_key(preset: &presets::PresetDefinition) -> Option<(String, String)> {
+  match &preset.starship {
+    presets::PresetStarshipValue::None => Some(("none".to_string(), "none".to_string())),
+    presets::PresetStarshipValue::Theme => Some(("theme".to_string(), "theme".to_string())),
+    presets::PresetStarshipValue::Preset(name) => Some(("preset".to_string(), name.clone())),
+    presets::PresetStarshipValue::Named(name) => Some(("named".to_string(), name.clone())),
+  }
+}
+
+fn apply_preset_to_states(
+  config: &ResolvedConfig,
+  preset_items: &[PresetItem],
+  preset_state: &mut PickerState,
+  theme_items: &[OptionItem],
+  theme_state: &mut PickerState,
+  selected_theme: &mut String,
+  theme_path: &mut PathBuf,
+  waybar_items: &mut Vec<LabeledItem>,
+  waybar_state: &mut PickerState,
+  starship_items: &mut Vec<LabeledItem>,
+  starship_state: &mut PickerState,
+) -> Result<()> {
+  let name = current_preset_name(preset_items, preset_state)
+    .ok_or_else(|| anyhow!("no preset selected"))?;
+
+  let preset = presets::load_preset_definition(config, &name)?;
+  let normalized = normalize_theme_name(&preset.theme);
+  let mut applied_theme = normalized.clone();
+  if !select_option_by_value(theme_state, theme_items, &normalized) {
+    if select_option_by_value(theme_state, theme_items, &preset.theme) {
+      applied_theme = preset.theme.clone();
+    } else {
+      return Err(anyhow!("preset theme not found in theme list"));
+    }
+  }
+
+  *selected_theme = applied_theme.clone();
+  *theme_path = config.theme_root_dir.join(&applied_theme);
+
+  *waybar_items = build_waybar_items(config, theme_path)?;
+  *starship_items = build_starship_items(config, theme_path)?;
+  reset_picker_cache(waybar_state);
+  reset_picker_cache(starship_state);
+  rebuild_filtered(waybar_state, waybar_items);
+  rebuild_filtered(starship_state, starship_items);
+
+  select_item_by_key(waybar_state, waybar_items, preset_waybar_key(&preset));
+  select_item_by_key(
+    starship_state,
+    starship_items,
+    preset_starship_key(&preset),
+  );
+  ensure_selected(&mut waybar_state.list_state, waybar_state.filtered_indices.len());
+  ensure_selected(
+    &mut starship_state.list_state,
+    starship_state.filtered_indices.len(),
+  );
+
+  Ok(())
+}
+
+fn build_preset_entry_from_selection(
+  config: &ResolvedConfig,
+  theme: &str,
+  waybar_selection: WaybarSelection,
+  starship_selection: StarshipSelection,
+) -> presets::PresetEntry {
+  let waybar_entry = match waybar_selection {
+    WaybarSelection::UseDefaults => waybar_entry_from_defaults(config),
+    WaybarSelection::None => presets::PresetWaybarEntry {
+      mode: Some("none".to_string()),
+      name: None,
+    },
+    WaybarSelection::Auto => presets::PresetWaybarEntry {
+      mode: Some("auto".to_string()),
+      name: None,
+    },
+    WaybarSelection::Named(name) => presets::PresetWaybarEntry {
+      mode: Some("named".to_string()),
+      name: Some(name),
+    },
+  };
+
+  let starship_entry = match starship_selection {
+    StarshipSelection::UseDefaults => starship_entry_from_defaults(config),
+    StarshipSelection::None => presets::PresetStarshipEntry {
+      mode: Some("none".to_string()),
+      preset: None,
+      name: None,
+    },
+    StarshipSelection::Preset(preset) => presets::PresetStarshipEntry {
+      mode: Some("preset".to_string()),
+      preset: Some(preset),
+      name: None,
+    },
+    StarshipSelection::Named(name) => presets::PresetStarshipEntry {
+      mode: Some("named".to_string()),
+      preset: None,
+      name: Some(name),
+    },
+    StarshipSelection::Theme(_) => presets::PresetStarshipEntry {
+      mode: Some("theme".to_string()),
+      preset: None,
+      name: None,
+    },
+  };
+
+  presets::PresetEntry {
+    theme: Some(theme.to_string()),
+    waybar: Some(waybar_entry),
+    starship: Some(starship_entry),
+  }
+}
+
+fn waybar_entry_from_defaults(config: &ResolvedConfig) -> presets::PresetWaybarEntry {
+  match waybar_from_defaults(config) {
+    (WaybarMode::Auto, _) => presets::PresetWaybarEntry {
+      mode: Some("auto".to_string()),
+      name: None,
+    },
+    (WaybarMode::Named, Some(name)) => presets::PresetWaybarEntry {
+      mode: Some("named".to_string()),
+      name: Some(name),
+    },
+    _ => presets::PresetWaybarEntry {
+      mode: Some("none".to_string()),
+      name: None,
+    },
+  }
+}
+
+fn starship_entry_from_defaults(config: &ResolvedConfig) -> presets::PresetStarshipEntry {
+  match starship_from_defaults(config) {
+    StarshipMode::Preset { preset } => presets::PresetStarshipEntry {
+      mode: Some("preset".to_string()),
+      preset: Some(preset),
+      name: None,
+    },
+    StarshipMode::Named { name } => presets::PresetStarshipEntry {
+      mode: Some("named".to_string()),
+      preset: None,
+      name: Some(name),
+    },
+    _ => presets::PresetStarshipEntry {
+      mode: Some("none".to_string()),
+      preset: None,
+      name: None,
+    },
+  }
+}
+
+fn current_waybar_label(items: &[LabeledItem], state: &PickerState) -> String {
+  let index = match selected_item_index(state, items.len()) {
+    Some(index) => index,
+    None => return "No options".to_string(),
+  };
   if items.len() == 1 && items[0].kind == "default" {
     return "Use defaults".to_string();
   }
-  let index = selected_index(state, items.len());
   let item = &items[index];
   match item.kind.as_str() {
     "default" => "Omarchy default".to_string(),
     "theme" => "Theme waybar".to_string(),
+    "none" => "No waybar changes".to_string(),
     _ => item.label.clone(),
   }
 }
 
-fn current_starship_label(items: &[LabeledItem], state: &ListState) -> String {
-  if items.is_empty() {
-    return "No options".to_string();
-  }
+fn current_starship_label(items: &[LabeledItem], state: &PickerState) -> String {
+  let index = match selected_item_index(state, items.len()) {
+    Some(index) => index,
+    None => return "No options".to_string(),
+  };
   if items.len() == 1 && items[0].kind == "default" {
     return "Use defaults".to_string();
   }
-  let index = selected_index(state, items.len());
   let item = &items[index];
   match item.kind.as_str() {
     "default" => "Omarchy default".to_string(),
     "theme" => "Theme starship".to_string(),
+    "none" => "No Starship changes".to_string(),
     _ => item.label.clone(),
   }
 }
 
-fn current_waybar_selection(items: &[LabeledItem], state: &ListState) -> WaybarSelection {
-  if items.is_empty() {
-    return WaybarSelection::UseDefaults;
-  }
+fn current_waybar_selection(items: &[LabeledItem], state: &PickerState) -> WaybarSelection {
+  let index = match selected_item_index(state, items.len()) {
+    Some(index) => index,
+    None => return WaybarSelection::UseDefaults,
+  };
   if items.len() == 1 && items[0].kind == "default" {
     return WaybarSelection::UseDefaults;
   }
-  let index = selected_index(state, items.len());
   match items[index].kind.as_str() {
-    "default" => WaybarSelection::None,
+    "default" => WaybarSelection::UseDefaults,
+    "none" => WaybarSelection::None,
     "theme" => WaybarSelection::Auto,
     _ => WaybarSelection::Named(items[index].value.clone()),
   }
@@ -1336,43 +2122,44 @@ fn current_waybar_selection(items: &[LabeledItem], state: &ListState) -> WaybarS
 
 fn current_starship_selection(
   items: &[LabeledItem],
-  state: &ListState,
+  state: &PickerState,
   theme_path: &Path,
 ) -> StarshipSelection {
-  if items.is_empty() {
-    return StarshipSelection::UseDefaults;
-  }
+  let index = match selected_item_index(state, items.len()) {
+    Some(index) => index,
+    None => return StarshipSelection::UseDefaults,
+  };
   if items.len() == 1 && items[0].kind == "default" {
     return StarshipSelection::UseDefaults;
   }
-  let index = selected_index(state, items.len());
   match items[index].kind.as_str() {
-    "default" => StarshipSelection::None,
+    "default" => StarshipSelection::UseDefaults,
+    "none" => StarshipSelection::None,
     "theme" => StarshipSelection::Theme(theme_path.join("starship.yaml")),
     "preset" => StarshipSelection::Preset(items[index].value.clone()),
     _ => StarshipSelection::Named(items[index].value.clone()),
   }
 }
 
-fn selected_item_key(items: &[LabeledItem], state: &ListState) -> Option<(String, String)> {
-  if items.is_empty() {
-    return None;
-  }
-  let index = selected_index(state, items.len());
+fn selected_item_key(items: &[LabeledItem], state: &PickerState) -> Option<(String, String)> {
+  let index = selected_item_index(state, items.len())?;
   Some((items[index].kind.clone(), items[index].value.clone()))
 }
 
-fn select_item_by_key(
-  state: &mut ListState,
-  items: &[LabeledItem],
-  key: Option<(String, String)>,
-) {
+fn select_item_by_key(state: &mut PickerState, items: &[LabeledItem], key: Option<(String, String)>) {
   if let Some((kind, value)) = key {
-    if let Some(index) = items
+    if let Some(item_index) = items
       .iter()
       .position(|item| item.kind == kind && item.value == value)
     {
-      state.select(Some(index));
+      if let Some(filtered_pos) = state
+        .filtered_indices
+        .iter()
+        .position(|&idx| idx == item_index)
+      {
+        state.list_state.select(Some(filtered_pos));
+        state.last_selected = Some(item_index);
+      }
     }
   }
 }
@@ -1386,6 +2173,59 @@ fn reset_picker_cache(state: &mut PickerState) {
   state.code_scroll = 0;
   state.image_visible = false;
   state.force_clear = true;
+}
+
+fn filter_item_indices<T: ItemView>(items: &[T], query: &str) -> Vec<usize> {
+  if query.trim().is_empty() {
+    return (0..items.len()).collect();
+  }
+  let matcher = SkimMatcherV2::default().ignore_case();
+  let mut scored: Vec<(i64, usize, String)> = Vec::new();
+  for (idx, item) in items.iter().enumerate() {
+    let label = item.label();
+    if let Some(score) = matcher.fuzzy_match(&label, query) {
+      scored.push((score, idx, label));
+    }
+  }
+  scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.2.cmp(&b.2)));
+  scored.into_iter().map(|(_, idx, _)| idx).collect()
+}
+
+fn selected_item_index(state: &PickerState, len: usize) -> Option<usize> {
+  let idx = if !state.filtered_indices.is_empty() {
+    let selected = selected_index(&state.list_state, state.filtered_indices.len());
+    state.filtered_indices.get(selected).copied()
+  } else {
+    state.last_selected
+  };
+  match idx {
+    Some(idx) if idx < len => Some(idx),
+    _ => None,
+  }
+}
+
+fn rebuild_filtered<T: ItemView>(state: &mut PickerState, items: &[T]) {
+  let previous = selected_item_index(state, items.len());
+  state.filtered_indices = filter_item_indices(items, &state.search_query);
+  if let Some(item_index) = previous {
+    if let Some(pos) = state
+      .filtered_indices
+      .iter()
+      .position(|&idx| idx == item_index)
+    {
+      state.list_state.select(Some(pos));
+      state.last_selected = Some(item_index);
+      return;
+    }
+  }
+  ensure_selected(&mut state.list_state, state.filtered_indices.len());
+  if let Some(selected) = state
+    .filtered_indices
+    .get(selected_index(&state.list_state, state.filtered_indices.len()))
+    .copied()
+  {
+    state.last_selected = Some(selected);
+  }
 }
 
 fn ensure_selected(state: &mut ListState, len: usize) {
@@ -1692,5 +2532,100 @@ impl ItemView for OptionItem {
 impl ItemView for LabeledItem {
   fn label(&self) -> String {
     self.label.clone()
+  }
+}
+
+impl ItemView for PresetItem {
+  fn label(&self) -> String {
+    self.label.clone()
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  struct DummyItem {
+    label: String,
+  }
+
+  impl ItemView for DummyItem {
+    fn label(&self) -> String {
+      self.label.clone()
+    }
+  }
+
+  #[test]
+  fn filter_items_empty_query_returns_all() {
+    let items = vec![
+      DummyItem {
+        label: "alpha".to_string(),
+      },
+      DummyItem {
+        label: "bravo".to_string(),
+      },
+      DummyItem {
+        label: "charlie".to_string(),
+      },
+    ];
+    let filtered = filter_item_indices(&items, "");
+    assert_eq!(filtered, vec![0, 1, 2]);
+  }
+
+  #[test]
+  fn filter_items_with_query_returns_matches() {
+    let items = vec![
+      DummyItem {
+        label: "alpha".to_string(),
+      },
+      DummyItem {
+        label: "bravo".to_string(),
+      },
+      DummyItem {
+        label: "charlie".to_string(),
+      },
+    ];
+    let filtered = filter_item_indices(&items, "br");
+    assert_eq!(filtered, vec![1]);
+  }
+
+  #[test]
+  fn rebuild_filtered_preserves_last_selected() {
+    let items = vec![
+      DummyItem {
+        label: "alpha".to_string(),
+      },
+      DummyItem {
+        label: "bravo".to_string(),
+      },
+    ];
+    let mut state = PickerState::new();
+    rebuild_filtered(&mut state, &items);
+    state.list_state.select(Some(1));
+    rebuild_filtered(&mut state, &items);
+    assert_eq!(state.last_selected, Some(1));
+
+    state.search_query = "zzz".to_string();
+    rebuild_filtered(&mut state, &items);
+    assert!(state.filtered_indices.is_empty());
+    assert_eq!(state.last_selected, Some(1));
+  }
+
+  #[test]
+  fn preset_keys_map_to_items() {
+    let preset = presets::PresetDefinition {
+      name: "Test".to_string(),
+      theme: "noir".to_string(),
+      waybar: presets::PresetWaybarValue::None,
+      starship: presets::PresetStarshipValue::Theme,
+    };
+    assert_eq!(
+      preset_waybar_key(&preset),
+      Some(("none".to_string(), "none".to_string()))
+    );
+    assert_eq!(
+      preset_starship_key(&preset),
+      Some(("theme".to_string(), "theme".to_string()))
+    );
   }
 }

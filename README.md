@@ -34,6 +34,8 @@ Common commands:
   Cycle themes, show current theme, or cycle background.
 - `install <git-url>`, `update`, `remove [theme]`  
   Install/update/remove git-based themes.
+- `preset save|load|list|remove`  
+  Save and apply named theme presets.
 - `print-config`  
   Show resolved configuration values.
 - `version`  
@@ -52,7 +54,7 @@ Quiet mode:
 
 **`browse`**  
 Pick a theme in a full‑screen tabbed picker with a Review tab for apply. If `preview.png` (case-insensitive) exists in the theme folder it will show on the right; otherwise it falls back to `theme.png` (case-insensitive) or the first image in `backgrounds/`.  
-Tabs: Theme, Waybar, Starship, Review. Apply with Ctrl+Enter.
+Tabs: Theme, Waybar, Starship, Presets, Review. Apply with Ctrl+Enter. Save a preset from Review with Ctrl+S. Search: press `/`, type to filter, `Esc` to clear, `Enter` to keep the query. A single-line status bar shows the current selections and shortcuts.
 
 **`next` / `current` / `bg-next`**  
 `next` switches to the next theme in sorted order.  
@@ -63,6 +65,22 @@ Tabs: Theme, Waybar, Starship, Review. Apply with Ctrl+Enter.
 `install` clones a theme into your Omarchy themes folder and activates it.  
 `update` pulls updates for git-based themes only.  
 `remove` deletes a theme folder (prompts if no name is given).
+
+**`preset save|load|list|remove`**  
+Presets store a theme + Waybar + Starship bundle in `~/.config/theme-manager/presets.toml`.  
+Save a preset:
+```
+theme-manager preset save "Daily Driver" --theme noir --waybar auto --starship preset:bracketed-segmented
+```
+If `--theme` is omitted, the current theme is used.
+Load a preset (flags override the preset):
+```
+theme-manager preset load "Daily Driver" -w
+```
+Notes:
+- `--waybar` accepts `none`, `auto`, or a Waybar theme name.
+- `--starship` accepts `none`, `theme`, `preset:<name>`, `named:<name>`, or a bare name (uses a named theme if it exists, otherwise a preset).
+- Precedence: CLI flags > preset values > config defaults.
 
 **`print-config`**  
 Prints the resolved config values after applying all overrides.
@@ -154,6 +172,8 @@ awww_auto_start = false
 Precedence order: CLI flags > env vars > local config > user config > defaults.
 
 Use `theme-manager print-config` to see resolved values.
+
+Presets are stored separately in `~/.config/theme-manager/presets.toml`.
 
 Environment flags (optional):
 - `THEME_MANAGER_SKIP_APPS=1` skips app reloads and setters (fast, but not full parity).

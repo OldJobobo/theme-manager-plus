@@ -1,6 +1,6 @@
 [package]
 name = "theme-manager-plus"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2021"
 description = "Rust rewrite of Theme Manager Plus (scaffolding)"
 license = "MIT"
@@ -23,6 +23,7 @@ ansi-to-tui = "8.0.0"
 ratatui-core = "0.1.0"
 syntect = "5.2.0"
 rand = "0.8.5"
+fuzzy-matcher = "0.3.7"
 
 [dev-dependencies]
 assert_cmd = "2.1.1"
