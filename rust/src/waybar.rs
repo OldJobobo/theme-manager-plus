@@ -88,7 +88,7 @@ pub fn prepare_waybar(ctx: &CommandContext<'_>, theme_dir: &Path) -> Result<Opti
 }
 
 fn needs_waybar_copy_for_import(waybar_dir: &Path, style_path: &Path) -> Result<bool> {
-  if style_path.starts_with(waybar_dir) {
+  if style_path.parent() == Some(waybar_dir) {
     return Ok(false);
   }
   let content = fs::read_to_string(style_path)?;

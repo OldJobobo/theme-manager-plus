@@ -1,5 +1,4 @@
 use anyhow::{anyhow, Result};
-use std::env;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread;
@@ -36,47 +35,25 @@ fn awww_daemon_running() -> bool {
     .unwrap_or(false)
 }
 
-fn awww_socket_path() -> Option<PathBuf> {
-  let runtime = env::var("XDG_RUNTIME_DIR").ok()?;
-  let display = env::var("WAYLAND_DISPLAY").ok()?;
-  Some(PathBuf::from(runtime).join(format!("{display}-awww-daemon..sock")))
-}
-
 pub fn ensure_awww_daemon(config: &ResolvedConfig, quiet: bool) {
-  if !config.awww_transition || !config.awww_auto_start {
+  if !config.awww_transition {
     return;
   }
   if !command_exists("awww") {
     return;
   }
   if !command_exists("awww-daemon") {
+    notify_awww_unavailable(quiet);
     if !quiet {
       eprintln!("theme-manager: awww-daemon not found in PATH");
     }
     return;
   }
-  if awww_daemon_running() {
-    return;
-  }
-  if !quiet {
-    eprintln!("theme-manager: starting awww-daemon for transitions");
-  }
-  let _ = Command::new("awww-daemon").spawn();
-  if let Some(socket_path) = awww_socket_path() {
-    for _ in 0..40 {
-      if socket_path.exists() {
-        return;
-      }
-      thread::sleep(Duration::from_millis(50));
-    }
+  if !awww_daemon_running() {
+    notify_awww_unavailable(quiet);
     if !quiet {
-      eprintln!(
-        "theme-manager: awww-daemon socket not found at {}",
-        socket_path.to_string_lossy()
-      );
+      eprintln!("theme-manager: awww-daemon not running; skipping transition");
     }
-  } else {
-    thread::sleep(Duration::from_millis(200));
   }
 }
 
@@ -275,36 +252,7 @@ pub fn run_awww_transition(config: &ResolvedConfig, quiet: bool, debug_awww: boo
       let stderr = String::from_utf8_lossy(&output.stderr);
       let socket_error = stderr.contains("awww-daemon") || stderr.contains("Socket file");
       if socket_error {
-        if config.awww_auto_start {
-          if !quiet {
-            eprintln!("theme-manager: starting awww-daemon for transitions");
-          }
-          if !command_exists("awww-daemon") {
-            if !quiet {
-              eprintln!("theme-manager: awww-daemon not found in PATH");
-            }
-            return Ok(());
-          }
-          let _ = Command::new("awww-daemon").spawn();
-          let mut last_err = String::new();
-          for _ in 0..60 {
-            thread::sleep(Duration::from_millis(50));
-            let retry = Command::new("awww").args(&args).output();
-            if let Ok(retry) = retry {
-              if retry.status.success() {
-                return Ok(());
-              }
-              let retry_err = String::from_utf8_lossy(&retry.stderr);
-              last_err = retry_err.to_string();
-              if !(retry_err.contains("awww-daemon") || retry_err.contains("Socket file")) {
-                break;
-              }
-            }
-          }
-          if !quiet && !last_err.is_empty() {
-            eprintln!("theme-manager: awww transition retry failed: {last_err}");
-          }
-        }
+        notify_awww_unavailable(quiet);
         if !quiet {
           eprintln!("theme-manager: awww-daemon not running; skipping transition");
         }
@@ -343,4 +291,21 @@ fn resolve_background(link_path: &Path) -> Result<Option<PathBuf>> {
     return Ok(Some(resolve_link_target(link_path)?));
   }
   Ok(Some(link_path.to_path_buf()))
+}
+
+fn notify_awww_unavailable(quiet: bool) {
+  if !command_exists("notify-send") {
+    return;
+  }
+  let mut command = Command::new("notify-send");
+  command.args([
+    "--app-name=theme-manager",
+    "--urgency=normal",
+    "awww-daemon not available",
+    "Transitions are disabled until it is running.",
+  ]);
+  if quiet {
+    command.stdout(Stdio::null()).stderr(Stdio::null());
+  }
+  let _ = command.status();
 }

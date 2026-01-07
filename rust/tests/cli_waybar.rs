@@ -85,3 +85,43 @@ default_mode = "auto"
   assert!(args.contains("-s"));
   assert!(args.contains("waybar-theme/style.css"));
 }
+
+#[test]
+fn waybar_apply_exec_falls_back_to_copy_for_relative_import() {
+  let env = setup_env();
+  add_omarchy_stubs(&env.bin);
+  let themes = omarchy_dir(&env.home).join("themes");
+  fs::create_dir_all(themes.join("theme-a")).unwrap();
+
+  let waybar_theme = env.home.join(".config/waybar/themes/shared");
+  fs::create_dir_all(&waybar_theme).unwrap();
+  fs::write(waybar_theme.join("config.jsonc"), "cfg").unwrap();
+  fs::write(
+    waybar_theme.join("style.css"),
+    "@import \"../omarchy/current/theme/waybar.css\";\n",
+  )
+  .unwrap();
+
+  let cfg_dir = env.home.join(".config/theme-manager");
+  fs::create_dir_all(&cfg_dir).unwrap();
+  write_toml(
+    &cfg_dir.join("config.toml"),
+    r#"[waybar]
+apply_mode = "exec"
+"#,
+  );
+
+  let mut cmd = cmd_with_env(&env);
+  cmd.env_remove("THEME_MANAGER_SKIP_APPS");
+  cmd.args(["set", "theme-a", "-w", "shared"]);
+  cmd.assert().success();
+
+  let applied_config = env.home.join(".config/waybar/config.jsonc");
+  let applied_style = env.home.join(".config/waybar/style.css");
+  assert!(applied_config.exists());
+  assert!(applied_style.exists());
+  let config_content = fs::read_to_string(applied_config).unwrap();
+  let style_content = fs::read_to_string(applied_style).unwrap();
+  assert_eq!(config_content, "cfg");
+  assert!(style_content.contains("../omarchy/current/theme/waybar.css"));
+}
