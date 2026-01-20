@@ -21,7 +21,7 @@ Commands:
 USAGE
 }
 
-VERSION="0.2.0"
+VERSION="0.2.1"
 
 theme_root_dir() {
   echo "${THEME_ROOT_DIR:-${HOME}/.config/omarchy/themes}"
@@ -1347,9 +1347,12 @@ main() {
       shift
       cmd_remove "${1:-}"
       ;;
-    help|-h|--help|"")
+    help|-h|--help)
       print_usage
       return 2
+      ;;
+    "")
+      cmd_browse
       ;;
     *)
       echo "theme-manager: unknown command: ${command}" >&2

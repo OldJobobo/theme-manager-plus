@@ -26,7 +26,8 @@ pub fn run(cli: cli::Cli) -> Result<()> {
   let skip_apps = std::env::var("THEME_MANAGER_SKIP_APPS").is_ok();
   let skip_hook = std::env::var("THEME_MANAGER_SKIP_HOOK").is_ok();
 
-  match cli.command {
+  let command = cli.command.unwrap_or(Command::Browse(cli::BrowseArgs { quiet: false }));
+  match command {
     Command::List => {
       theme_ops::cmd_list(&config)?;
     }

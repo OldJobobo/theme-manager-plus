@@ -4,7 +4,7 @@ use clap::{Parser, Subcommand};
 #[command(name = "theme-manager", version, about = "Theme Manager Plus (Rust)")]
 pub struct Cli {
   #[command(subcommand)]
-  pub command: Command,
+  pub command: Option<Command>,
   #[arg(long, global = true, help = "Print the awww command used for transitions")]
   pub debug_awww: bool,
 }

@@ -4,6 +4,9 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## 0.2.1
+- Default to the browse picker when running `theme-manager` with no arguments.
+
 ## 0.2.0
 - Added install/uninstall scripts for release binaries with a source-build fallback.
 

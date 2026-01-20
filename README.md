@@ -23,6 +23,7 @@ or
 ```
 thene-manager list
 theme-manager set <ThemeName>
+theme-manager
 ```
 
 ## Requirements
@@ -39,7 +40,7 @@ curl -fsSL https://raw.githubusercontent.com/OldJobobo/theme-manager-plus/main/i
 ```
 Install a specific version:
 ```
-THEME_MANAGER_VERSION=0.2.0 \
+THEME_MANAGER_VERSION=0.2.1 \
   curl -fsSL https://raw.githubusercontent.com/OldJobobo/theme-manager-plus/main/install.sh | bash
 ```
 Uninstall:
@@ -63,6 +64,7 @@ Common commands:
   Switch themes. `-w` applies Waybar (auto or named). `-q` suppresses external command output.
 - `browse`  
   Full‑screen selector with theme previews; then Waybar and Starship pickers.
+  Run with no arguments to open browse.
 - `next`, `current`, `bg-next`  
   Cycle themes, show current theme, or cycle background.
 - `install <git-url>`, `update`, `remove [theme]`  

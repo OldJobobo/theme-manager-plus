@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 0.2.1
+Running `theme-manager` with no arguments now opens the browse picker.
+
 ## 0.2.0
 Release install now uses prebuilt binaries with a source-build fallback, plus an uninstall script.
 
