@@ -8,7 +8,7 @@
 # Root directory containing Omarchy themes.
 THEME_ROOT_DIR="$HOME/.config/omarchy/themes"
 
-# Symlink used to point to the current Omarchy theme.
+# Path used for the current Omarchy theme (Theme Manager+ uses a symlink by default).
 CURRENT_THEME_LINK="$HOME/.config/omarchy/current/theme"
 
 # Optional: prepend Omarchy's bin directory to PATH so omarchy-* commands resolve.
