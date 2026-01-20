@@ -11,18 +11,32 @@ What it does:
 - Includes a TUI app launcher entry in Omarchy (see “Omarchy App Launcher Integration”).
 
 ## Quick Start
-Requirements:
+If you just want it working:
+```
+curl -fsSL https://raw.githubusercontent.com/OldJobobo/theme-manager-plus/main/install.sh | bash
+```
+Then run:
+```
+theme-manager list
+theme-manager set <ThemeName>
+```
+
+## Requirements
 - Omarchy installed on this machine.
 - Omarchy scripts available in PATH (or set `OMARCHY_BIN_DIR` in config).
 - `starship` is optional (only needed for preset selection or applying Starship presets).
 - `kitty` or `chafa` is optional for browse previews (text fallback otherwise).
 - `awww` is optional for wallpaper transition animations (used if installed; the daemon is not auto-started).
 
-## Install
-Recommended (prebuilt binary):
+## Install (Beginner-Friendly)
+Recommended (prebuilt binary, fastest):
 ```
 curl -fsSL https://raw.githubusercontent.com/OldJobobo/theme-manager-plus/main/install.sh | bash
 ```
+What it does:
+- Downloads the latest Linux x86_64 release binary.
+- Installs it to `~/.local/bin/theme-manager`.
+- Falls back to building from source if the download fails and this repo is present.
 Pin a version:
 ```
 THEME_MANAGER_VERSION=0.2.0 curl -fsSL https://raw.githubusercontent.com/OldJobobo/theme-manager-plus/main/install.sh | bash
