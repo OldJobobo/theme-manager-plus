@@ -1,11 +1,14 @@
 use anyhow::{anyhow, Result};
 use std::fs;
-use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
+use walkdir::WalkDir;
 
 use crate::config::ResolvedConfig;
 use crate::omarchy;
-use crate::paths::{current_theme_dir, normalize_theme_name, resolve_link_target, title_case_theme};
+use crate::paths::{
+  current_theme_dir, current_theme_name, normalize_theme_name, resolve_link_target,
+  title_case_theme,
+};
 use crate::starship;
 use crate::waybar;
 
@@ -94,23 +97,33 @@ pub fn cmd_set(ctx: &CommandContext<'_>, theme_name: &str) -> Result<()> {
 
   omarchy::ensure_awww_daemon(ctx.config, ctx.quiet);
 
-  ensure_parent_dir(&ctx.config.current_theme_link)?;
-  replace_symlink(&theme_path, &ctx.config.current_theme_link)?;
+  let theme_source = resolve_link_target(&theme_path)?;
+  let staging_dir = prepare_staging_dir(&theme_source, &ctx.config.current_theme_link)?;
+  omarchy::run_optional("omarchy-theme-set-templates", &[], ctx.quiet)?;
+  replace_theme_dir(&staging_dir, &ctx.config.current_theme_link)?;
+  write_theme_name(&ctx.config.current_theme_link, &normalized)?;
+
+  let current_theme_dir = current_theme_dir(&ctx.config.current_theme_link)?;
 
   let mut waybar_restart = None;
   if !ctx.skip_apps {
-    waybar_restart = waybar::prepare_waybar(ctx, &theme_path)?;
-    starship::apply_starship(ctx, &theme_path)?;
+    waybar_restart = waybar::prepare_waybar(ctx, &current_theme_dir)?;
+    starship::apply_starship(ctx, &current_theme_dir)?;
   }
 
   if !ctx.skip_apps {
     if ctx.config.awww_transition && omarchy::command_exists("awww") {
-      cycle_background(ctx, &theme_path)?;
+      omarchy::stop_swaybg();
+      cycle_background(ctx, &current_theme_dir)?;
       let _ = omarchy::run_awww_transition(ctx.config, ctx.quiet, ctx.debug_awww);
     } else {
       omarchy::run_required("omarchy-theme-bg-next", &[], ctx.quiet)?;
     }
-    omarchy::reload_components(ctx.quiet, waybar_restart)?;
+    omarchy::reload_components(
+      ctx.quiet,
+      waybar_restart,
+      ctx.config.waybar_restart_logs,
+    )?;
     omarchy::apply_theme_setters(ctx.quiet)?;
   }
 
@@ -131,35 +144,45 @@ pub fn cmd_next(ctx: &CommandContext<'_>) -> Result<()> {
     return Err(anyhow!("no themes available"));
   }
 
-  let current_dir = current_theme_dir(&ctx.config.current_theme_link).ok();
-  let current_name = current_dir
-    .as_ref()
-    .and_then(|path| path.file_name())
-    .and_then(|name| name.to_str())
-    .map(|name| name.to_string());
+  let current_name = current_theme_name(&ctx.config.current_theme_link)?;
 
   let next = next_theme(&entries, current_name.as_deref());
   cmd_set(ctx, &next)
 }
 
 pub fn cmd_current(config: &ResolvedConfig) -> Result<()> {
-  if !is_symlink(&config.current_theme_link)? {
-    return Err(anyhow!(
+  let name = current_theme_name(&config.current_theme_link)?.ok_or_else(|| {
+    anyhow!(
       "current theme not set: {}",
       config.current_theme_link.to_string_lossy()
-    ));
-  }
-  let target = resolve_link_target(&config.current_theme_link)?;
-  let name = target
-    .file_name()
-    .and_then(|n| n.to_str())
-    .ok_or_else(|| anyhow!("current theme not set: invalid link target"))?;
-  println!("{}", title_case_theme(name));
+    )
+  })?;
+  println!("{}", title_case_theme(&name));
   Ok(())
 }
 
-pub fn cmd_bg_next(_config: &ResolvedConfig) -> Result<()> {
-  omarchy::run_required("omarchy-theme-bg-next", &[], false)?;
+pub fn cmd_bg_next(config: &ResolvedConfig, debug_awww: bool) -> Result<()> {
+  let theme_path = current_theme_dir(&config.current_theme_link)?;
+  
+  let ctx = CommandContext {
+    config,
+    quiet: false,
+    skip_apps: false,
+    skip_hook: false,
+    waybar_mode: WaybarMode::None,
+    waybar_name: None,
+    starship_mode: StarshipMode::None,
+    debug_awww,
+  };
+  
+  if config.awww_transition && omarchy::command_exists("awww") {
+    omarchy::ensure_awww_daemon(config, false);
+    omarchy::stop_swaybg();
+    cycle_background(&ctx, &theme_path)?;
+    let _ = omarchy::run_awww_transition(config, false, debug_awww);
+  } else {
+    omarchy::run_required("omarchy-theme-bg-next", &[], false)?;
+  }
   Ok(())
 }
 
@@ -209,15 +232,15 @@ fn next_theme(entries: &[String], current: Option<&str>) -> String {
   entries[0].clone()
 }
 
-fn replace_symlink(target: &Path, link_path: &Path) -> Result<()> {
-  if let Ok(meta) = fs::symlink_metadata(link_path) {
+fn replace_theme_dir(staging_dir: &Path, current_dir: &Path) -> Result<()> {
+  if let Ok(meta) = fs::symlink_metadata(current_dir) {
     if meta.file_type().is_dir() {
-      fs::remove_dir_all(link_path)?;
+      fs::remove_dir_all(current_dir)?;
     } else {
-      fs::remove_file(link_path)?;
+      fs::remove_file(current_dir)?;
     }
   }
-  symlink(target, link_path)?;
+  fs::rename(staging_dir, current_dir)?;
   Ok(())
 }
 
@@ -237,15 +260,28 @@ fn is_symlink(path: &Path) -> Result<bool> {
 }
 
 fn cycle_background(ctx: &CommandContext<'_>, theme_path: &Path) -> Result<()> {
-  let backgrounds_dir = theme_path.join("backgrounds");
-  if !backgrounds_dir.is_dir() {
+  let mut background_dirs = Vec::new();
+  let theme_backgrounds = theme_path.join("backgrounds");
+  if theme_backgrounds.is_dir() {
+    background_dirs.push(theme_backgrounds);
+  }
+  if let Some(theme_name) = current_theme_name(&ctx.config.current_theme_link)? {
+    if let Some(omarchy_dir) = ctx.config.current_theme_link.parent().and_then(|p| p.parent()) {
+      let user_backgrounds = omarchy_dir.join("backgrounds").join(theme_name);
+      if user_backgrounds.is_dir() {
+        background_dirs.push(user_backgrounds);
+      }
+    }
+  }
+  if background_dirs.is_empty() {
     return Ok(());
   }
 
-  let mut images: Vec<PathBuf> = fs::read_dir(&backgrounds_dir)?
-    .filter_map(|entry| entry.ok().map(|e| e.path()))
-    .filter(|path| {
-      path.is_file()
+  let mut images: Vec<PathBuf> = Vec::new();
+  for dir in &background_dirs {
+    for entry in fs::read_dir(dir)? {
+      let path = entry?.path();
+      if path.is_file()
         && path
           .extension()
           .and_then(|ext| ext.to_str())
@@ -256,9 +292,13 @@ fn cycle_background(ctx: &CommandContext<'_>, theme_path: &Path) -> Result<()> {
             )
           })
           .unwrap_or(false)
-    })
-    .collect();
+      {
+        images.push(path);
+      }
+    }
+  }
   images.sort();
+  images.dedup();
   if images.is_empty() {
     return Ok(());
   }
@@ -266,7 +306,7 @@ fn cycle_background(ctx: &CommandContext<'_>, theme_path: &Path) -> Result<()> {
   let current_link = &ctx.config.current_background_link;
   let current_target = if current_link.exists() {
     if current_link.is_symlink() {
-      Some(crate::paths::resolve_link_target(current_link)?)
+      Some(resolve_link_target(current_link)?)
     } else {
       Some(current_link.to_path_buf())
     }
@@ -298,9 +338,68 @@ fn cycle_background(ctx: &CommandContext<'_>, theme_path: &Path) -> Result<()> {
   Ok(())
 }
 
+fn write_theme_name(current_link: &Path, theme_name: &str) -> Result<()> {
+  let Some(parent) = current_link.parent() else {
+    return Ok(());
+  };
+  fs::create_dir_all(parent)?;
+  fs::write(parent.join("theme.name"), theme_name)?;
+  Ok(())
+}
+
 fn is_broken_symlink(path: &Path) -> Result<bool> {
   if !is_symlink(path)? {
     return Ok(false);
   }
   Ok(fs::metadata(path).is_err())
+}
+
+fn prepare_staging_dir(theme_source: &Path, current_link: &Path) -> Result<PathBuf> {
+  ensure_parent_dir(current_link)?;
+  let current_parent = current_link
+    .parent()
+    .ok_or_else(|| anyhow!("failed to resolve current theme parent"))?;
+  let staging_dir = current_parent.join("next-theme");
+
+  if let Ok(meta) = fs::symlink_metadata(&staging_dir) {
+    if meta.file_type().is_dir() {
+      fs::remove_dir_all(&staging_dir)?;
+    } else {
+      fs::remove_file(&staging_dir)?;
+    }
+  }
+  fs::create_dir_all(&staging_dir)?;
+  copy_theme_dir(theme_source, &staging_dir)?;
+  Ok(staging_dir)
+}
+
+fn copy_theme_dir(source: &Path, dest: &Path) -> Result<()> {
+  for entry in WalkDir::new(source).follow_links(false) {
+    let entry = entry?;
+    let entry_path = entry.path();
+    let rel = entry_path.strip_prefix(source)?;
+    if rel.as_os_str().is_empty() {
+      continue;
+    }
+    let target_path = dest.join(rel);
+    let file_type = entry.file_type();
+    if file_type.is_dir() {
+      fs::create_dir_all(&target_path)?;
+      continue;
+    }
+    if file_type.is_symlink() {
+      let link_target = fs::read_link(entry_path)?;
+      if let Some(parent) = target_path.parent() {
+        fs::create_dir_all(parent)?;
+      }
+      #[cfg(unix)]
+      std::os::unix::fs::symlink(link_target, &target_path)?;
+      continue;
+    }
+    if let Some(parent) = target_path.parent() {
+      fs::create_dir_all(parent)?;
+    }
+    fs::copy(entry_path, &target_path)?;
+  }
+  Ok(())
 }

@@ -87,19 +87,30 @@ pub fn run_command(cmd: &str, args: &[&str], quiet: bool) -> Result<()> {
   Ok(())
 }
 
-pub fn reload_components(quiet: bool, waybar_restart: Option<RestartAction>) -> Result<()> {
+pub fn stop_swaybg() {
+  if command_exists("pkill") {
+    let _ = run_command("pkill", &["-x", "swaybg"], true);
+  }
+}
+
+pub fn reload_components(
+  quiet: bool,
+  waybar_restart: Option<RestartAction>,
+  waybar_restart_logs: bool,
+) -> Result<()> {
   run_optional("omarchy-restart-terminal", &[], quiet)?;
   if let Some(restart) = waybar_restart {
+    let waybar_quiet = quiet || !waybar_restart_logs;
     match restart {
       RestartAction::Command(restart) => {
         let arg_refs: Vec<&str> = restart.args.iter().map(|arg| arg.as_str()).collect();
-        run_command(&restart.cmd, &arg_refs, quiet)?;
+        run_command(&restart.cmd, &arg_refs, waybar_quiet)?;
       }
       RestartAction::WaybarExec {
         config_path,
         style_path,
       } => {
-        restart_waybar_exec(&config_path, &style_path, quiet)?;
+        restart_waybar_exec(&config_path, &style_path, waybar_quiet)?;
       }
     }
   } else {

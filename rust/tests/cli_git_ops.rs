@@ -45,9 +45,8 @@ fn install_clones_and_sets_theme() {
   let installed = themes.join("nord");
   assert!(installed.is_dir());
 
-  let link = omarchy_dir(&env.home).join("current/theme");
-  let target = fs::read_link(&link).expect("symlink");
-  assert!(target.to_string_lossy().contains("nord"));
+  let name = fs::read_to_string(omarchy_dir(&env.home).join("current/theme.name")).unwrap();
+  assert_eq!(name.trim(), "nord");
 }
 
 #[test]
@@ -77,8 +76,8 @@ fn remove_deletes_current_and_advances() {
   cmd.assert().success();
 
   assert!(!themes.join("alpha").exists());
-  let target = fs::read_link(&current).expect("symlink");
-  assert!(target.to_string_lossy().contains("bravo"));
+  let name = fs::read_to_string(omarchy_dir(&env.home).join("current/theme.name")).unwrap();
+  assert_eq!(name.trim(), "bravo");
 }
 
 #[test]

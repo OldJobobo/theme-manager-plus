@@ -95,7 +95,7 @@ pub fn run(cli: cli::Cli) -> Result<()> {
       theme_ops::cmd_current(&config)?;
     }
     Command::BgNext => {
-      theme_ops::cmd_bg_next(&config)?;
+      theme_ops::cmd_bg_next(&config, cli.debug_awww)?;
     }
     Command::PrintConfig => {
       config::print_config(&config);
@@ -215,14 +215,8 @@ fn build_preset_entry(
       }
       normalized
     }
-    None => {
-      let current = paths::current_theme_dir(&config.current_theme_link)?;
-      current
-        .file_name()
-        .and_then(|name| name.to_str())
-        .ok_or_else(|| anyhow!("current theme not set: invalid link target"))?
-        .to_string()
-    }
+    None => paths::current_theme_name(&config.current_theme_link)?
+      .ok_or_else(|| anyhow!("current theme not set: invalid link target"))?,
   };
 
   let waybar_value = match args.waybar.as_deref() {

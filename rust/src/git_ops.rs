@@ -170,15 +170,8 @@ fn select_removable_theme(theme_root: &Path) -> Result<String> {
 }
 
 fn is_current_theme(config: &ResolvedConfig, theme_name: &str) -> Result<bool> {
-  let target = match fs::read_link(&config.current_theme_link) {
-    Ok(target) => target,
-    Err(_) => return Ok(false),
-  };
-  let name = target
-    .file_name()
-    .and_then(|n| n.to_str())
-    .unwrap_or("");
-  Ok(name == theme_name)
+  let current = crate::paths::current_theme_name(&config.current_theme_link)?;
+  Ok(current.as_deref() == Some(theme_name))
 }
 
 fn is_symlink(path: &Path) -> Result<bool> {

@@ -18,6 +18,11 @@ theme_root_dir = "~/.config/omarchy/themes-user"
 "#,
   );
   fs::create_dir_all(env.home.join(".config/omarchy/themes-user/user-theme")).unwrap();
+  fs::write(
+    env.home.join(".config/omarchy/themes-user/user-theme/marker.txt"),
+    "user",
+  )
+  .unwrap();
 
   write_toml(
     &project.join(".theme-manager.toml"),
@@ -26,13 +31,18 @@ theme_root_dir = "~/.config/omarchy/themes-local"
 "#,
   );
   fs::create_dir_all(env.home.join(".config/omarchy/themes-local/local-theme")).unwrap();
+  fs::write(
+    env.home.join(".config/omarchy/themes-local/local-theme/marker.txt"),
+    "local",
+  )
+  .unwrap();
 
   let mut cmd = cmd_with_env(&env);
   cmd.current_dir(&project);
   cmd.args(["set", "local-theme"]);
   cmd.assert().success();
 
-  let link = omarchy_dir(&env.home).join("current/theme");
-  let target = fs::read_link(&link).expect("symlink");
-  assert!(target.to_string_lossy().contains("themes-local/local-theme"));
+  let theme_dir = omarchy_dir(&env.home).join("current/theme");
+  let marker = fs::read_to_string(theme_dir.join("marker.txt")).unwrap();
+  assert_eq!(marker, "local");
 }

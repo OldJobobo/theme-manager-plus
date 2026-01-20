@@ -35,6 +35,9 @@ pub fn title_case_theme(name: &str) -> String {
 }
 
 pub fn resolve_link_target(link_path: &Path) -> Result<PathBuf> {
+  if !link_path.is_symlink() {
+    return Ok(link_path.canonicalize()?);
+  }
   let target = fs::read_link(link_path)?;
   if target.is_absolute() {
     return Ok(target);
@@ -45,8 +48,50 @@ pub fn resolve_link_target(link_path: &Path) -> Result<PathBuf> {
   Ok(parent.join(target))
 }
 
+pub fn current_theme_name(current_link: &Path) -> Result<Option<String>> {
+  let link_target_name = if current_link.is_symlink() {
+    resolve_link_target(current_link)?
+      .file_name()
+      .and_then(|n| n.to_str())
+      .map(|n| n.to_string())
+  } else {
+    None
+  };
+
+  if let Some(parent) = current_link.parent() {
+    let name_path = parent.join("theme.name");
+    if name_path.is_file() {
+      let name = fs::read_to_string(&name_path)?.trim().to_string();
+      if !name.is_empty() {
+        if let Some(target_name) = link_target_name.as_deref() {
+          if target_name != name {
+            return Ok(Some(target_name.to_string()));
+          }
+        }
+        return Ok(Some(name));
+      }
+    }
+  }
+
+  if let Some(target_name) = link_target_name {
+    return Ok(Some(target_name));
+  }
+
+  if current_link.exists() {
+    let name = current_link.file_name().and_then(|n| n.to_str()).map(|n| n.to_string());
+    if let Some(name) = &name {
+      if name == "theme" {
+        return Ok(None);
+      }
+    }
+    return Ok(name);
+  }
+
+  Ok(None)
+}
+
 pub fn current_theme_dir(current_link: &Path) -> Result<PathBuf> {
-  if !is_symlink(current_link)? {
+  if !current_link.exists() {
     return Err(anyhow!(
       "current theme not set: {}",
       current_link.to_string_lossy()

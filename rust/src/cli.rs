@@ -43,7 +43,7 @@ pub struct NextArgs {
 }
 
 #[derive(Parser, Debug)]
-#[command(about = "Interactive picker (press / to search, Esc to clear).")]
+#[command(about = "Interactive picker with inline search (type to filter, Backspace deletes, Ctrl+u clears).")]
 pub struct BrowseArgs {
   #[arg(short = 'q', long = "quiet")]
   pub quiet: bool,

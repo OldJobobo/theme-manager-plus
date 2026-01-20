@@ -28,6 +28,7 @@ pub struct PathsConfig {
 pub struct WaybarConfig {
   pub apply_mode: Option<String>,
   pub restart_cmd: Option<String>,
+  pub restart_logs: Option<bool>,
   pub default_mode: Option<String>,
   pub default_name: Option<String>,
 }
@@ -63,6 +64,7 @@ pub struct ResolvedConfig {
   pub waybar_themes_dir: PathBuf,
   pub waybar_apply_mode: String,
   pub waybar_restart_cmd: Option<String>,
+  pub waybar_restart_logs: bool,
   pub default_waybar_mode: Option<String>,
   pub default_waybar_name: Option<String>,
   pub starship_config: PathBuf,
@@ -116,8 +118,9 @@ impl ResolvedConfig {
       omarchy_bin_dir: None,
       waybar_dir,
       waybar_themes_dir,
-      waybar_apply_mode: "exec".to_string(),
+      waybar_apply_mode: "symlink".to_string(),
       waybar_restart_cmd: None,
+      waybar_restart_logs: false,
       default_waybar_mode: None,
       default_waybar_name: None,
       starship_config,
@@ -174,6 +177,9 @@ impl ResolvedConfig {
       }
       if let Some(val) = &waybar.restart_cmd {
         self.waybar_restart_cmd = Some(val.clone());
+      }
+      if let Some(val) = waybar.restart_logs {
+        self.waybar_restart_logs = val;
       }
       if let Some(val) = &waybar.default_mode {
         self.default_waybar_mode = Some(val.clone());
@@ -253,6 +259,13 @@ impl ResolvedConfig {
     }
     if let Ok(val) = env::var("WAYBAR_RESTART_CMD") {
       self.waybar_restart_cmd = Some(val);
+    }
+    if let Ok(val) = env::var("WAYBAR_RESTART_LOGS") {
+      if val == "1" || val.eq_ignore_ascii_case("true") {
+        self.waybar_restart_logs = true;
+      } else if val == "0" || val.eq_ignore_ascii_case("false") {
+        self.waybar_restart_logs = false;
+      }
     }
     if let Ok(val) = env::var("DEFAULT_WAYBAR_MODE") {
       self.default_waybar_mode = Some(val);
@@ -377,6 +390,10 @@ pub fn print_config(config: &ResolvedConfig) {
   println!(
     "WAYBAR_RESTART_CMD={}",
     config.waybar_restart_cmd.as_deref().unwrap_or("")
+  );
+  println!(
+    "WAYBAR_RESTART_LOGS={}",
+    if config.waybar_restart_logs { "1" } else { "" }
   );
   println!(
     "STARSHIP_CONFIG={}",

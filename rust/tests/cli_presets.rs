@@ -35,9 +35,8 @@ fn preset_save_list_load_remove() {
   cmd.args(["preset", "load", "Daily"]);
   cmd.assert().success();
 
-  let link = omarchy_dir(&env.home).join("current/theme");
-  let target = fs::read_link(&link).expect("symlink");
-  assert!(target.to_string_lossy().contains("noir"));
+  let name = fs::read_to_string(omarchy_dir(&env.home).join("current/theme.name")).unwrap();
+  assert_eq!(name.trim(), "noir");
 
   let mut cmd = cmd_with_env(&env);
   cmd.args(["preset", "remove", "Daily"]);
