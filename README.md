@@ -18,6 +18,24 @@ Requirements:
 - `kitty` or `chafa` is optional for browse previews (text fallback otherwise).
 - `awww` is optional for wallpaper transition animations (used if installed; the daemon is not auto-started).
 
+## Install
+Recommended (prebuilt binary):
+```
+curl -fsSL https://raw.githubusercontent.com/OldJobobo/theme-manager-plus/main/install.sh | bash
+```
+Pin a version:
+```
+THEME_MANAGER_VERSION=0.1.10 curl -fsSL https://raw.githubusercontent.com/OldJobobo/theme-manager-plus/main/install.sh | bash
+```
+Uninstall:
+```
+curl -fsSL https://raw.githubusercontent.com/OldJobobo/theme-manager-plus/main/uninstall.sh | bash
+```
+Uninstall and remove config:
+```
+curl -fsSL https://raw.githubusercontent.com/OldJobobo/theme-manager-plus/main/uninstall.sh | bash -s -- --purge
+```
+
 Common commands:
 - `theme-manager list` — show available themes.
 - `theme-manager set <ThemeName>` — switch to a theme.
@@ -109,6 +127,7 @@ Notes:
 - The Rust binary uses a built-in restart in exec mode (pkill + `uwsm-app -- waybar -c/-s`) unless `WAYBAR_RESTART_CMD` overrides it.
 - Waybar exec restart output is silenced by default; set `waybar.restart_logs = true` to inherit logs in the launching terminal.
 - The Bash CLI falls back to copy mode with a warning if the helper is missing.
+- `install.sh` downloads a release binary when possible and falls back to building from source if it is run from a git checkout.
 
 ### Starship
 Theme Manager Plus can apply Starship prompt configs after a theme switch.

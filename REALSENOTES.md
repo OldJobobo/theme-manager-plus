@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 0.1.10
+Release install now uses prebuilt binaries with a source-build fallback, plus an uninstall script.
+
 ## 0.1.9
 Pressing Enter to advance tabs now resets the next list to the top selection.
 

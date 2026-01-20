@@ -21,7 +21,7 @@ Commands:
 USAGE
 }
 
-VERSION="0.1.9"
+VERSION="0.1.10"
 
 theme_root_dir() {
   echo "${THEME_ROOT_DIR:-${HOME}/.config/omarchy/themes}"

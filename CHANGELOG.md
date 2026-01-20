@@ -4,6 +4,9 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## 0.1.10
+- Added install/uninstall scripts for release binaries with a source-build fallback.
+
 ## 0.1.9
 - Reset list selection to the top when advancing to the next tab with Enter.
 
