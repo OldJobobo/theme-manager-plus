@@ -1,7 +1,7 @@
 # Theme Manager Plus
 
 ## Overview
-Theme Manager Plus is a command-line tool that switches Omarchy themes the same way the Omarchy menu does. It is not a replacement for Omarchy’s theming system. Think of it as a direct, expanded and customizable version of “Menu → Style → Theme → <name>”.
+Theme Manager Plus is a TUI and CLI tool that switches Omarchy themes the same way the Omarchy menu does. It is not a replacement for Omarchy’s theming system. Think of it as a direct, expanded and customizable version of “Menu → Style → Theme → <name>”.
 
 What it does:
 - Materializes `~/.config/omarchy/current/theme` and writes `theme.name` so Omarchy apps know what theme is active.
