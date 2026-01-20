@@ -13,10 +13,15 @@ What it does:
 ## Quick Start
 ```
 curl -fsSL https://raw.githubusercontent.com/OldJobobo/theme-manager-plus/main/install.sh | bash
-theme-manager list
+
 ```
 then
 ```
+theme-manager
+```
+or
+```
+thene-manager list
 theme-manager set <ThemeName>
 ```
 
