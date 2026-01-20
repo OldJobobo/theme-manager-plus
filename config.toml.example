@@ -1,0 +1,53 @@
+[paths]
+# theme_root_dir = "~/.config/omarchy/themes"
+# current_theme_link = "~/.config/omarchy/current/theme" # Theme Manager+ uses a symlink by default.
+# current_background_link = "~/.config/omarchy/current/background"
+# omarchy_bin_dir = "~/.local/share/omarchy/bin"
+# waybar_dir = "~/.config/waybar"
+# waybar_themes_dir = "~/.config/waybar/themes"
+# starship_config = "~/.config/starship.toml"
+# starship_themes_dir = "~/.config/starship-themes"
+
+[waybar]
+# apply_mode = "exec" # copy|exec
+# restart_cmd = "" # optional override (built-in exec restart is default)
+# restart_logs = false # set true to keep Waybar logs attached to the launching terminal
+# default_mode = "auto" # auto|named|"" (empty = none)
+# default_name = ""
+
+[starship]
+# default_mode = "" # preset|named|"" (empty = none)
+# default_preset = ""
+# default_name = ""
+
+[behavior]
+# quiet_default = false
+# awww_transition = true
+# awww_transition_type = "grow"
+# awww_transition_duration = 2.4
+# awww_transition_angle = 35
+# awww_transition_fps = 60
+# awww_transition_pos = "center"
+# awww_transition_bezier = ".42,0,.2,1"
+# awww_transition_wave = "28,12"
+#
+# Cinematic drift (wave) preset:
+# awww_transition_type = "wave"
+# awww_transition_duration = 2.6
+# awww_transition_angle = 35
+# awww_transition_fps = 60
+# awww_transition_pos = "center"
+# awww_transition_bezier = ".42,0,.2,1"
+# awww_transition_wave = "28,12"
+#
+# Classic wipe preset:
+# awww_transition_type = "wipe"
+# awww_transition_duration = 2.0
+# awww_transition_angle = 45
+# awww_transition_fps = 60
+# awww_transition_pos = "center"
+# awww_transition_bezier = ".54,0,.34,.99"
+# awww_transition_wave = "20,20"
+# awww_auto_start = false # reserved (theme-manager does not auto-start awww-daemon)
+
+# Presets are stored separately in ~/.config/theme-manager/presets.toml
