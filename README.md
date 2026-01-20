@@ -1,14 +1,15 @@
 # Theme Manager Plus
 
 ## Overview
-Theme Manager Plus is a command-line tool that switches Omarchy themes the same way the Omarchy menu does. It is not a replacement for Omarchy’s theming system. Think of it as a direct, scriptable version of “Menu → Style → Theme → <name>”.
+Theme Manager Plus is a command-line tool that switches Omarchy themes the same way the Omarchy menu does. It is not a replacement for Omarchy’s theming system. Think of it as a direct, expanded and customizable version of “Menu → Style → Theme → <name>”.
 
 What it does:
 - Materializes `~/.config/omarchy/current/theme` and writes `theme.name` so Omarchy apps know what theme is active.
 - Runs Omarchy’s own theme scripts so apps update the same way they do from the menu.
 - Reloads the usual components (Waybar, terminals, notifications, etc.).
 - Can also apply a Waybar theme when you ask it to.
-- Can apply Starship presets or user themes, and save/load presets for theme/Waybar/Starship bundles.
+- Can apply Starship presets or user themes,
+- And save/load presets for theme/Waybar/Starship bundles.
 
 ## Quick Start
 ```
