@@ -8,7 +8,7 @@ What it does:
 - Runs Omarchy’s own theme scripts so apps update the same way they do from the menu.
 - Reloads the usual components (Waybar, terminals, notifications, etc.).
 - Can also apply a Waybar theme when you ask it to.
-- Includes a TUI app launcher entry in Omarchy (see “Omarchy App Launcher Integration”).
+- Can apply Starship presets or user themes, and save/load presets for theme/Waybar/Starship bundles.
 
 ## Quick Start
 ```
