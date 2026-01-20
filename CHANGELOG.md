@@ -3,19 +3,33 @@
 All notable changes to this project are documented in this file.
 
 ## Unreleased
+
+## 0.1.9
+- Reset list selection to the top when advancing to the next tab with Enter.
+
+## 0.1.8
+- Limited held-key navigation to one list move per poll cycle to avoid multi-row jumps.
+
+## 0.1.7
 - Added tabbed browse workflow with review/apply step, mouse focus, and improved key handling.
-- Added fuzzy search in the browse picker lists (Theme/Waybar/Starship) with `/` to search.
+- Added fuzzy search in the browse picker lists (Theme/Waybar/Starship) with an inline search field.
 - Added preset save/load/list/remove commands with TOML storage and a new Presets tab in the TUI.
 - Added Review-screen preset save shortcut (Ctrl+S) and a single-line status bar in the TUI.
 - Added new awww transition presets and expanded awww transition configuration options.
 - Improved preview rendering and clearing behavior in the TUI.
 - Added awww-backed wallpaper transitions with theme background cycling, daemon auto-start, and debug logging support.
 - Added built-in Waybar exec restart logic in the Rust binary (no external helper required).
-- Falling back to copy mode when Waybar styles import `../omarchy/current/theme/waybar.css` (exec mode).
+- Added `waybar.restart_logs` config to control Waybar restart log output (default: silenced).
+- Default Waybar apply mode is now symlink with backups for existing non-symlink Waybar paths.
+- Falling back to symlink mode when Waybar styles import `../omarchy/current/theme/waybar.css` (exec mode).
 - Deferred app restarts until after theme, Waybar, and Starship changes are applied.
 - Reworked browse TUI layout with syntax-highlighted config previews and dedicated image/prompt preview panes.
 - Improved Starship preview rendering and placement in the browse picker.
+- Materialized current theme directories in the Rust binary and invoked `omarchy-theme-set-templates` to render `colors.toml` outputs.
+- Documented the Rust binary’s template rendering and current theme materialization behavior.
 - Updated config defaults/docs for new awww behavior and slower transition timing.
+- Updated docs to reflect Omarchy’s current theme flow (materialized current theme directory, template generation, and theme.name usage).
+- Fixed browse picker key repeat buffering by draining queued key events while held keys repeat.
 
 ## 0.1.5
 - Improved README flow and Starship documentation details.

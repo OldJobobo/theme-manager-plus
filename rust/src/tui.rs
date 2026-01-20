@@ -6,7 +6,6 @@ use crossterm::event::{
 };
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use crossterm::{execute, terminal};
-use fuzzy_matcher::{skim::SkimMatcherV2, FuzzyMatcher};
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout, Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -33,6 +32,8 @@ use crate::paths::{normalize_theme_name, title_case_theme};
 use crate::theme_ops::{starship_from_defaults, waybar_from_defaults, StarshipMode, WaybarMode};
 use crate::presets;
 use crate::preview;
+
+const APP_TITLE: &str = concat!("Theme Manager+ v", env!("CARGO_PKG_VERSION"));
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FocusArea {
@@ -86,7 +87,7 @@ struct PickerState {
   image_visible: bool,
   force_clear: bool,
   search_query: String,
-  search_active: bool,
+  last_query: String,
   filtered_indices: Vec<usize>,
   last_selected: Option<usize>,
 }
@@ -108,7 +109,7 @@ impl PickerState {
       image_visible: false,
       force_clear: false,
       search_query: String::new(),
-      search_active: false,
+      last_query: String::new(),
       filtered_indices: Vec::new(),
       last_selected: None,
     }
@@ -232,8 +233,9 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
   let backend = PreviewBackend::detect();
   let mut terminal = setup_terminal()?;
   let mut tab = BrowseTab::Theme;
-  let tab_titles = ["Theme", "Waybar", "Starship", "Presets", "Review"];
+  let tab_titles = ["Theme", "Waybar", "Starship", "Review", "Presets"];
   let mut tab_ranges: Vec<(u16, u16, usize)> = Vec::new();
+  let mut active_search_area = Rect::ZERO;
   let mut active_list_inner = Rect::ZERO;
   let mut active_code_inner = Rect::ZERO;
   let mut active_code_area = Rect::ZERO;
@@ -272,7 +274,7 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
       let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-          Constraint::Length(3),
+          Constraint::Length(2),
           Constraint::Min(0),
           Constraint::Length(1),
         ])
@@ -312,6 +314,7 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
               None
             },
           );
+          active_search_area = areas.search_area;
           active_list_inner = areas.list_inner;
           active_code_inner = areas.code_inner;
           active_code_area = areas.code_area;
@@ -335,6 +338,7 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
               None
             },
           );
+          active_search_area = areas.search_area;
           active_list_inner = areas.list_inner;
           active_code_inner = areas.code_inner;
           active_code_area = areas.code_area;
@@ -358,6 +362,7 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
               None
             },
           );
+          active_search_area = areas.search_area;
           active_list_inner = areas.list_inner;
           active_code_inner = areas.code_inner;
           active_code_area = areas.code_area;
@@ -375,11 +380,13 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
               None
             },
           );
+          active_search_area = areas.search_area;
           active_list_inner = areas.list_inner;
           active_code_inner = areas.code_inner;
           active_code_area = areas.code_area;
         }
         BrowseTab::Review => {
+          active_search_area = Rect::ZERO;
           active_list_inner = Rect::ZERO;
           active_code_inner = Rect::ZERO;
           active_code_area = Rect::ZERO;
@@ -407,257 +414,267 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
     })?;
 
     if event::poll(Duration::from_millis(200))? {
-      match event::read()? {
-        Event::Key(key) => {
-          if key.kind == KeyEventKind::Release {
-            continue;
-          }
-          let now = Instant::now();
-          if preset_save_active {
-            if key.kind == KeyEventKind::Repeat {
-              continue;
-            }
-            match key.code {
-              KeyCode::Esc => {
-                preset_save_active = false;
-                preset_save_input.clear();
-                status_tab = BrowseTab::Review;
-                status_at = Instant::now();
-                status_message = "Preset save canceled".to_string();
+      let mut handled_nav = false;
+      'event_loop: loop {
+        let next_event = event::read()?;
+        match next_event {
+          Event::Key(key) => {
+            if key.kind == KeyEventKind::Release {
+              if !event::poll(Duration::from_millis(0))? {
+                break 'event_loop;
               }
-              KeyCode::Enter => {
-                let name = preset_save_input.trim();
-                status_tab = BrowseTab::Review;
-                status_at = Instant::now();
-                if name.is_empty() {
-                  status_message = "Preset name required".to_string();
-                } else {
-                  let entry = build_preset_entry_from_selection(
-                    config,
-                    &selected_theme,
-                    current_waybar_selection(&waybar_items, &waybar_state),
-                    current_starship_selection(
-                      &starship_items,
-                      &starship_state,
-                      &theme_path,
-                    ),
-                  );
-                  match presets::save_preset(name, entry, config) {
-                    Ok(()) => {
-                      status_message = "Preset saved".to_string();
-                      preset_file = presets::load_presets()?;
-                      preset_items = build_preset_items(&preset_file);
-                      reset_picker_cache(&mut preset_state);
-                      rebuild_filtered(&mut preset_state, &preset_items);
-                      select_preset_by_name(&mut preset_state, &preset_items, name);
-                    }
-                    Err(err) => {
-                      status_message = err.to_string();
-                    }
-                  }
+              continue 'event_loop;
+            }
+            let is_nav_key = matches!(
+              key.code,
+              KeyCode::Up
+                | KeyCode::Down
+                | KeyCode::PageUp
+                | KeyCode::PageDown
+                | KeyCode::Home
+                | KeyCode::End
+            );
+            if is_nav_key {
+              if handled_nav {
+                if !event::poll(Duration::from_millis(0))? {
+                  break 'event_loop;
                 }
-                preset_save_active = false;
-                preset_save_input.clear();
+                continue 'event_loop;
               }
-              KeyCode::Backspace => {
-                preset_save_input.pop();
-              }
-              KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                preset_save_input.clear();
-              }
-              KeyCode::Char(ch) => {
-                if !key.modifiers.contains(KeyModifiers::CONTROL)
-                  && !key.modifiers.contains(KeyModifiers::ALT)
-                {
-                  preset_save_input.push(ch);
+              handled_nav = true;
+            }
+            let now = Instant::now();
+            if preset_save_active {
+              if key.kind == KeyEventKind::Repeat {
+                if !event::poll(Duration::from_millis(0))? {
+                  break 'event_loop;
                 }
+                continue 'event_loop;
               }
-              _ => {}
-            }
-            continue;
-          }
-          let is_repeat = key.kind == event::KeyEventKind::Repeat;
-          if is_repeat {
-            if let Some((last_code, last_mod, last_at)) = last_press_key {
-              if last_code == key.code && last_mod == key.modifiers {
-                if now.duration_since(last_at) < Duration::from_millis(150) {
-                  continue;
-                }
-              }
-            }
-            if let Some((last_code, last_mod)) = last_repeat_key {
-              if last_code == key.code && last_mod == key.modifiers {
-                if now.duration_since(last_repeat_at) < Duration::from_millis(35) {
-                  continue;
-                }
-              }
-            }
-            last_repeat_key = Some((key.code, key.modifiers));
-            last_repeat_at = now;
-          } else {
-            last_press_key = Some((key.code, key.modifiers, now));
-          }
-          if let Some(state) =
-            active_picker_mut(
-              tab,
-              &mut theme_state,
-              &mut waybar_state,
-              &mut starship_state,
-              &mut preset_state,
-            )
-          {
-            if key.code == KeyCode::Char('/')
-              && !state.search_active
-              && tab != BrowseTab::Review
-            {
-              state.search_active = true;
-              state.search_query.clear();
-              rebuild_active_filtered(
-                tab,
-                &mut theme_state,
-                &mut waybar_state,
-                &mut starship_state,
-                &mut preset_state,
-                &theme_items,
-                &waybar_items,
-                &starship_items,
-                &preset_items,
-              );
-              continue;
-            }
-            if state.search_active && tab != BrowseTab::Review {
-              let mut handled = true;
               match key.code {
                 KeyCode::Esc => {
-                  state.search_active = false;
-                  state.search_query.clear();
+                  preset_save_active = false;
+                  preset_save_input.clear();
+                  status_tab = BrowseTab::Review;
+                  status_at = Instant::now();
+                  status_message = "Preset save canceled".to_string();
                 }
                 KeyCode::Enter => {
-                  state.search_active = false;
+                  let name = preset_save_input.trim();
+                  status_tab = BrowseTab::Review;
+                  status_at = Instant::now();
+                  if name.is_empty() {
+                    status_message = "Preset name required".to_string();
+                  } else {
+                    let entry = build_preset_entry_from_selection(
+                      config,
+                      &selected_theme,
+                      current_waybar_selection(&waybar_items, &waybar_state),
+                      current_starship_selection(
+                        &starship_items,
+                        &starship_state,
+                        &theme_path,
+                      ),
+                    );
+                    match presets::save_preset(name, entry, config) {
+                      Ok(()) => {
+                        status_message = "Preset saved".to_string();
+                        preset_file = presets::load_presets()?;
+                        preset_items = build_preset_items(&preset_file);
+                        reset_picker_cache(&mut preset_state);
+                        rebuild_filtered(&mut preset_state, &preset_items);
+                        select_preset_by_name(&mut preset_state, &preset_items, name);
+                      }
+                      Err(err) => {
+                        status_message = err.to_string();
+                      }
+                    }
+                  }
+                  preset_save_active = false;
+                  preset_save_input.clear();
                 }
                 KeyCode::Backspace => {
-                  state.search_query.pop();
+                  preset_save_input.pop();
                 }
                 KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                  state.search_query.clear();
+                  preset_save_input.clear();
                 }
                 KeyCode::Char(ch) => {
                   if !key.modifiers.contains(KeyModifiers::CONTROL)
                     && !key.modifiers.contains(KeyModifiers::ALT)
                   {
-                    state.search_query.push(ch);
-                  } else {
-                    handled = false;
+                    preset_save_input.push(ch);
                   }
                 }
-                _ => {
-                  handled = false;
+                _ => {}
+              }
+              if !event::poll(Duration::from_millis(0))? {
+                break 'event_loop;
+              }
+              continue 'event_loop;
+            }
+            let is_repeat = key.kind == event::KeyEventKind::Repeat;
+            if is_repeat {
+              if let Some((last_code, last_mod, last_at)) = last_press_key {
+                if last_code == key.code && last_mod == key.modifiers {
+                  if now.duration_since(last_at) < Duration::from_millis(150) {
+                    if !event::poll(Duration::from_millis(0))? {
+                      break 'event_loop;
+                    }
+                    continue 'event_loop;
+                  }
                 }
               }
-              if handled {
-                rebuild_active_filtered(
-                  tab,
-                  &mut theme_state,
-                  &mut waybar_state,
-                  &mut starship_state,
-                  &mut preset_state,
-                  &theme_items,
-                  &waybar_items,
-                  &starship_items,
-                  &preset_items,
-                );
-                continue;
+              if let Some((last_code, last_mod)) = last_repeat_key {
+                if last_code == key.code && last_mod == key.modifiers {
+                  if now.duration_since(last_repeat_at) < Duration::from_millis(35) {
+                    if !event::poll(Duration::from_millis(0))? {
+                      break 'event_loop;
+                    }
+                    continue 'event_loop;
+                  }
+                }
               }
+              last_repeat_key = Some((key.code, key.modifiers));
+              last_repeat_at = now;
+            } else {
+              last_press_key = Some((key.code, key.modifiers, now));
             }
-          }
-          if key.code == KeyCode::Char('q') || key.code == KeyCode::Esc {
-            cleanup_terminal(&mut terminal)?;
-            return Ok(None);
-          }
-          if key.code == KeyCode::Tab {
-            tab = previous_tab(tab);
-            clear_kitty_preview(&backend);
-            mark_force_clear(
+            if let Some(state) = active_picker_mut(
+              tab,
               &mut theme_state,
               &mut waybar_state,
               &mut starship_state,
               &mut preset_state,
-            );
-            stop_search(
-              &mut theme_state,
-              &mut waybar_state,
-              &mut starship_state,
-              &mut preset_state,
-            );
-            continue;
-          }
-          if key.code == KeyCode::BackTab {
-            tab = next_tab(tab);
-            clear_kitty_preview(&backend);
-            mark_force_clear(
-              &mut theme_state,
-              &mut waybar_state,
-              &mut starship_state,
-              &mut preset_state,
-            );
-            stop_search(
-              &mut theme_state,
-              &mut waybar_state,
-              &mut starship_state,
-              &mut preset_state,
-            );
-            continue;
-          }
-          if tab == BrowseTab::Review
-            && key.modifiers.contains(KeyModifiers::CONTROL)
-            && key.code == KeyCode::Char('s')
-          {
-            preset_save_active = true;
-            preset_save_input.clear();
-            continue;
-          }
-          if tab == BrowseTab::Review
-            && key.modifiers.contains(KeyModifiers::CONTROL)
-            && matches!(key.code, KeyCode::Enter | KeyCode::Char('m') | KeyCode::Char('j'))
-          {
-            let selection = BrowseSelection {
-              theme: selected_theme.clone(),
-              waybar: current_waybar_selection(&waybar_items, &waybar_state),
-              starship: current_starship_selection(
-                &starship_items,
-                &starship_state,
-                &theme_path,
-              ),
-            };
-            cleanup_terminal(&mut terminal)?;
-            return Ok(Some(selection));
-          }
-          if key.code == KeyCode::Enter && tab == BrowseTab::Presets {
-            status_tab = tab;
-            status_at = Instant::now();
-            match apply_preset_to_states(
-              config,
-              &preset_items,
-              &mut preset_state,
-              &theme_items,
-              &mut theme_state,
-              &mut selected_theme,
-              &mut theme_path,
-              &mut waybar_items,
-              &mut waybar_state,
-              &mut starship_items,
-              &mut starship_state,
             ) {
-              Ok(()) => {
-                status_message = "Preset loaded".to_string();
-                tab = BrowseTab::Review;
-              }
-              Err(err) => {
-                status_message = err.to_string();
+              if tab != BrowseTab::Review && state.focus == FocusArea::List {
+                let mut handled = false;
+                match key.code {
+                  KeyCode::Backspace => {
+                    state.search_query.pop();
+                    handled = true;
+                  }
+                  KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    state.search_query.clear();
+                    handled = true;
+                  }
+                  KeyCode::Char(ch) => {
+                    if !key.modifiers.contains(KeyModifiers::CONTROL)
+                      && !key.modifiers.contains(KeyModifiers::ALT)
+                    {
+                      state.search_query.push(ch);
+                      handled = true;
+                    }
+                  }
+                  _ => {}
+                }
+                if handled {
+                  rebuild_active_filtered(
+                    tab,
+                    &mut theme_state,
+                    &mut waybar_state,
+                    &mut starship_state,
+                    &mut preset_state,
+                    &theme_items,
+                    &waybar_items,
+                    &starship_items,
+                    &preset_items,
+                  );
+                  if !event::poll(Duration::from_millis(0))? {
+                    break 'event_loop;
+                  }
+                  continue 'event_loop;
+                }
               }
             }
-            continue;
-          }
+            if key.code == KeyCode::Char('q') || key.code == KeyCode::Esc {
+              cleanup_terminal(&mut terminal)?;
+              return Ok(None);
+            }
+            if key.code == KeyCode::Tab {
+              tab = next_tab(tab);
+              clear_kitty_preview(&backend);
+              mark_force_clear(
+                &mut theme_state,
+                &mut waybar_state,
+                &mut starship_state,
+                &mut preset_state,
+              );
+              if !event::poll(Duration::from_millis(0))? {
+                break 'event_loop;
+              }
+              continue 'event_loop;
+            }
+            if key.code == KeyCode::BackTab {
+              tab = previous_tab(tab);
+              clear_kitty_preview(&backend);
+              mark_force_clear(
+                &mut theme_state,
+                &mut waybar_state,
+                &mut starship_state,
+                &mut preset_state,
+              );
+              if !event::poll(Duration::from_millis(0))? {
+                break 'event_loop;
+              }
+              continue 'event_loop;
+            }
+            if tab == BrowseTab::Review
+              && key.modifiers.contains(KeyModifiers::CONTROL)
+              && key.code == KeyCode::Char('s')
+            {
+              preset_save_active = true;
+              preset_save_input.clear();
+              if !event::poll(Duration::from_millis(0))? {
+                break 'event_loop;
+              }
+              continue 'event_loop;
+            }
+            if tab == BrowseTab::Review
+              && key.modifiers.contains(KeyModifiers::CONTROL)
+              && matches!(key.code, KeyCode::Enter | KeyCode::Char('m') | KeyCode::Char('j'))
+            {
+              let selection = BrowseSelection {
+                theme: selected_theme.clone(),
+                waybar: current_waybar_selection(&waybar_items, &waybar_state),
+                starship: current_starship_selection(
+                  &starship_items,
+                  &starship_state,
+                  &theme_path,
+                ),
+              };
+              cleanup_terminal(&mut terminal)?;
+              return Ok(Some(selection));
+            }
+            if key.code == KeyCode::Enter && tab == BrowseTab::Presets {
+              status_tab = tab;
+              status_at = Instant::now();
+              match apply_preset_to_states(
+                config,
+                &preset_items,
+                &mut preset_state,
+                &theme_items,
+                &mut theme_state,
+                &mut selected_theme,
+                &mut theme_path,
+                &mut waybar_items,
+                &mut waybar_state,
+                &mut starship_items,
+                &mut starship_state,
+              ) {
+                Ok(()) => {
+                  status_message = "Preset loaded".to_string();
+                  tab = BrowseTab::Review;
+                }
+                Err(err) => {
+                  status_message = err.to_string();
+                }
+              }
+              if !event::poll(Duration::from_millis(0))? {
+                break 'event_loop;
+              }
+              continue 'event_loop;
+            }
           if key.code == KeyCode::Enter && tab != BrowseTab::Review {
             status_tab = tab;
             status_at = Instant::now();
@@ -669,100 +686,32 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
               BrowseTab::Review => String::new(),
             };
             tab = next_tab(tab);
-            continue;
-          }
-
-          let items_len = match tab {
-            BrowseTab::Theme => theme_state.filtered_indices.len(),
-            BrowseTab::Waybar => waybar_state.filtered_indices.len(),
-            BrowseTab::Starship => starship_state.filtered_indices.len(),
-            BrowseTab::Presets => preset_state.filtered_indices.len(),
-            BrowseTab::Review => 0,
-          };
-          if let Some(state) =
-            active_picker_mut(
+            let items_len = match tab {
+              BrowseTab::Theme => theme_state.filtered_indices.len(),
+              BrowseTab::Waybar => waybar_state.filtered_indices.len(),
+              BrowseTab::Starship => starship_state.filtered_indices.len(),
+              BrowseTab::Presets => preset_state.filtered_indices.len(),
+              BrowseTab::Review => 0,
+            };
+            if let Some(state) = active_picker_mut(
               tab,
               &mut theme_state,
               &mut waybar_state,
               &mut starship_state,
               &mut preset_state,
-            )
-          {
-            match key.code {
-              KeyCode::Up | KeyCode::Char('k') | KeyCode::Char('h') => match state.focus {
-                FocusArea::List => {
-                  let new_index = previous_index(state.list_state.selected(), items_len);
-                  state.list_state.select(Some(new_index));
-                }
-                FocusArea::Code => {
-                  state.code_scroll = state.code_scroll.saturating_sub(1);
-                }
-              },
-              KeyCode::Down | KeyCode::Char('j') | KeyCode::Char('l') => match state.focus {
-                FocusArea::List => {
-                  let new_index = next_index(state.list_state.selected(), items_len);
-                  state.list_state.select(Some(new_index));
-                }
-                FocusArea::Code => {
-                  state.code_scroll = state.code_scroll.saturating_add(1);
-                }
-              },
-              KeyCode::PageUp => {
-                let step = inner_rect(active_code_area).height.max(1);
-                state.code_scroll = state.code_scroll.saturating_sub(step);
+            ) {
+              if items_len > 0 {
+                state.list_state.select(Some(0));
+              } else {
+                state.list_state.select(None);
               }
-              KeyCode::PageDown => {
-                let step = inner_rect(active_code_area).height.max(1);
-                state.code_scroll = state.code_scroll.saturating_add(step);
-              }
-              KeyCode::Home => match state.focus {
-                FocusArea::List => state.list_state.select(Some(0)),
-                FocusArea::Code => state.code_scroll = 0,
-              },
-              KeyCode::End => match state.focus {
-                FocusArea::List => {
-                  state
-                    .list_state
-                    .select(Some(items_len.saturating_sub(1)));
-                }
-                FocusArea::Code => {
-                  let code_height = inner_rect(active_code_area).height as usize;
-                  let max_scroll = state
-                    .last_code
-                    .lines
-                    .len()
-                    .saturating_sub(code_height.max(1));
-                  state.code_scroll = max_scroll as u16;
-                }
-              },
-              _ => {}
+              state.focus = FocusArea::List;
             }
+            if !event::poll(Duration::from_millis(0))? {
+              break 'event_loop;
+            }
+            continue 'event_loop;
           }
-        }
-        Event::Mouse(mouse) => match mouse.kind {
-          MouseEventKind::Down(MouseButton::Left) => {
-            if tab_area.contains(Position {
-              x: mouse.column,
-              y: mouse.row,
-            }) {
-              if let Some(index) = tab_index_from_click(&tab_ranges, mouse.column) {
-                tab = tab_from_index(index);
-                clear_kitty_preview(&backend);
-                mark_force_clear(
-                  &mut theme_state,
-                  &mut waybar_state,
-                  &mut starship_state,
-                  &mut preset_state,
-                );
-                stop_search(
-                  &mut theme_state,
-                  &mut waybar_state,
-                  &mut starship_state,
-                  &mut preset_state,
-                );
-                continue;
-              }
-            }
 
             let items_len = match tab {
               BrowseTab::Theme => theme_state.filtered_indices.len(),
@@ -771,97 +720,184 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
               BrowseTab::Presets => preset_state.filtered_indices.len(),
               BrowseTab::Review => 0,
             };
-            if let Some(state) =
-              active_picker_mut(
+            if let Some(state) = active_picker_mut(
+              tab,
+              &mut theme_state,
+              &mut waybar_state,
+              &mut starship_state,
+              &mut preset_state,
+            ) {
+              match key.code {
+                KeyCode::Up => match state.focus {
+                  FocusArea::List => {
+                    let new_index = previous_index(state.list_state.selected(), items_len);
+                    state.list_state.select(Some(new_index));
+                  }
+                  FocusArea::Code => {
+                    state.code_scroll = state.code_scroll.saturating_sub(1);
+                  }
+                },
+                KeyCode::Down => match state.focus {
+                  FocusArea::List => {
+                    let new_index = next_index(state.list_state.selected(), items_len);
+                    state.list_state.select(Some(new_index));
+                  }
+                  FocusArea::Code => {
+                    state.code_scroll = state.code_scroll.saturating_add(1);
+                  }
+                },
+                KeyCode::PageUp => {
+                  let step = inner_rect(active_code_area).height.max(1);
+                  state.code_scroll = state.code_scroll.saturating_sub(step);
+                }
+                KeyCode::PageDown => {
+                  let step = inner_rect(active_code_area).height.max(1);
+                  state.code_scroll = state.code_scroll.saturating_add(step);
+                }
+                KeyCode::Home => match state.focus {
+                  FocusArea::List => state.list_state.select(Some(0)),
+                  FocusArea::Code => state.code_scroll = 0,
+                },
+                KeyCode::End => match state.focus {
+                  FocusArea::List => {
+                    state
+                      .list_state
+                      .select(Some(items_len.saturating_sub(1)));
+                  }
+                  FocusArea::Code => {
+                    let code_height = inner_rect(active_code_area).height as usize;
+                    let max_scroll = state
+                      .last_code
+                      .lines
+                      .len()
+                      .saturating_sub(code_height.max(1));
+                    state.code_scroll = max_scroll as u16;
+                  }
+                },
+                _ => {}
+              }
+            }
+          }
+          Event::Mouse(mouse) => match mouse.kind {
+            MouseEventKind::Down(MouseButton::Left) => {
+              if tab_area.contains(Position {
+                x: mouse.column,
+                y: mouse.row,
+              }) {
+                if let Some(index) = tab_index_from_click(&tab_ranges, mouse.column) {
+                  tab = tab_from_index(index);
+                  clear_kitty_preview(&backend);
+                  mark_force_clear(
+                    &mut theme_state,
+                    &mut waybar_state,
+                    &mut starship_state,
+                    &mut preset_state,
+                  );
+                  if !event::poll(Duration::from_millis(0))? {
+                    break 'event_loop;
+                  }
+                  continue 'event_loop;
+                }
+              }
+
+              let items_len = match tab {
+                BrowseTab::Theme => theme_state.filtered_indices.len(),
+                BrowseTab::Waybar => waybar_state.filtered_indices.len(),
+                BrowseTab::Starship => starship_state.filtered_indices.len(),
+                BrowseTab::Presets => preset_state.filtered_indices.len(),
+                BrowseTab::Review => 0,
+              };
+              if let Some(state) = active_picker_mut(
                 tab,
                 &mut theme_state,
                 &mut waybar_state,
                 &mut starship_state,
                 &mut preset_state,
-              )
-            {
-              let position = Position {
-                x: mouse.column,
-                y: mouse.row,
-              };
-              if active_list_inner.contains(position) {
-                state.focus = FocusArea::List;
-                select_index_at_row(
-                  &mut state.list_state,
-                  active_list_inner,
-                  mouse.row,
-                  items_len,
-                );
-              } else if active_code_inner.contains(position) {
-                state.focus = FocusArea::Code;
+              ) {
+                let position = Position {
+                  x: mouse.column,
+                  y: mouse.row,
+                };
+                if active_search_area.contains(position) {
+                  state.focus = FocusArea::List;
+                } else if active_list_inner.contains(position) {
+                  state.focus = FocusArea::List;
+                  select_index_at_row(
+                    &mut state.list_state,
+                    active_list_inner,
+                    mouse.row,
+                    items_len,
+                  );
+                } else if active_code_inner.contains(position) {
+                  state.focus = FocusArea::Code;
+                }
               }
             }
-          }
-          MouseEventKind::ScrollUp => {
-            let items_len = match tab {
-              BrowseTab::Theme => theme_state.filtered_indices.len(),
-              BrowseTab::Waybar => waybar_state.filtered_indices.len(),
-              BrowseTab::Starship => starship_state.filtered_indices.len(),
-              BrowseTab::Presets => preset_state.filtered_indices.len(),
-              BrowseTab::Review => 0,
-            };
-            if let Some(state) =
-              active_picker_mut(
+            MouseEventKind::ScrollUp => {
+              let items_len = match tab {
+                BrowseTab::Theme => theme_state.filtered_indices.len(),
+                BrowseTab::Waybar => waybar_state.filtered_indices.len(),
+                BrowseTab::Starship => starship_state.filtered_indices.len(),
+                BrowseTab::Presets => preset_state.filtered_indices.len(),
+                BrowseTab::Review => 0,
+              };
+              if let Some(state) = active_picker_mut(
                 tab,
                 &mut theme_state,
                 &mut waybar_state,
                 &mut starship_state,
                 &mut preset_state,
-              )
-            {
-              let position = Position {
-                x: mouse.column,
-                y: mouse.row,
-              };
-              if active_list_inner.contains(position) {
-                state.focus = FocusArea::List;
-                let new_index = previous_index(state.list_state.selected(), items_len);
-                state.list_state.select(Some(new_index));
-              } else if active_code_inner.contains(position) {
-                state.focus = FocusArea::Code;
-                state.code_scroll = state.code_scroll.saturating_sub(1);
+              ) {
+                let position = Position {
+                  x: mouse.column,
+                  y: mouse.row,
+                };
+                if active_list_inner.contains(position) {
+                  state.focus = FocusArea::List;
+                  let new_index = previous_index(state.list_state.selected(), items_len);
+                  state.list_state.select(Some(new_index));
+                } else if active_code_inner.contains(position) {
+                  state.focus = FocusArea::Code;
+                  state.code_scroll = state.code_scroll.saturating_sub(1);
+                }
               }
             }
-          }
-          MouseEventKind::ScrollDown => {
-            let items_len = match tab {
-              BrowseTab::Theme => theme_state.filtered_indices.len(),
-              BrowseTab::Waybar => waybar_state.filtered_indices.len(),
-              BrowseTab::Starship => starship_state.filtered_indices.len(),
-              BrowseTab::Presets => preset_state.filtered_indices.len(),
-              BrowseTab::Review => 0,
-            };
-            if let Some(state) =
-              active_picker_mut(
+            MouseEventKind::ScrollDown => {
+              let items_len = match tab {
+                BrowseTab::Theme => theme_state.filtered_indices.len(),
+                BrowseTab::Waybar => waybar_state.filtered_indices.len(),
+                BrowseTab::Starship => starship_state.filtered_indices.len(),
+                BrowseTab::Presets => preset_state.filtered_indices.len(),
+                BrowseTab::Review => 0,
+              };
+              if let Some(state) = active_picker_mut(
                 tab,
                 &mut theme_state,
                 &mut waybar_state,
                 &mut starship_state,
                 &mut preset_state,
-              )
-            {
-              let position = Position {
-                x: mouse.column,
-                y: mouse.row,
-              };
-              if active_list_inner.contains(position) {
-                state.focus = FocusArea::List;
-                let new_index = next_index(state.list_state.selected(), items_len);
-                state.list_state.select(Some(new_index));
-              } else if active_code_inner.contains(position) {
-                state.focus = FocusArea::Code;
-                state.code_scroll = state.code_scroll.saturating_add(1);
+              ) {
+                let position = Position {
+                  x: mouse.column,
+                  y: mouse.row,
+                };
+                if active_list_inner.contains(position) {
+                  state.focus = FocusArea::List;
+                  let new_index = next_index(state.list_state.selected(), items_len);
+                  state.list_state.select(Some(new_index));
+                } else if active_code_inner.contains(position) {
+                  state.focus = FocusArea::Code;
+                  state.code_scroll = state.code_scroll.saturating_add(1);
+                }
               }
             }
-          }
+            _ => {}
+          },
           _ => {}
-        },
-        _ => {}
+        }
+        if !event::poll(Duration::from_millis(0))? {
+          break;
+        }
       }
     }
 
@@ -1331,6 +1367,7 @@ fn trim_empty_lines(mut lines: Vec<Line<'static>>) -> Vec<Line<'static>> {
 }
 
 struct PickerAreas {
+  search_area: Rect,
   list_inner: Rect,
   code_inner: Rect,
   code_area: Rect,
@@ -1362,20 +1399,33 @@ fn render_picker<T: ItemView>(
     .split(area);
   let top_chunks = Layout::default()
     .direction(Direction::Horizontal)
-    .constraints([Constraint::Percentage(25), Constraint::Percentage(75)].as_ref())
+    .constraints([Constraint::Percentage(25), Constraint::Length(1), Constraint::Min(0)].as_ref())
     .split(chunks[0]);
   let image_area = inner_rect(chunks[1]);
-  let list_area = top_chunks[0];
+  let list_column = top_chunks[0];
+  let list_chunks = Layout::default()
+    .direction(Direction::Vertical)
+    .constraints([Constraint::Length(3), Constraint::Min(0)].as_ref())
+    .split(list_column);
+  let search_area = list_chunks[0];
+  let list_area = list_chunks[1];
   let list_inner = list_inner_rect(list_area);
-  let code_area = top_chunks[1];
+  let code_area = top_chunks[2];
   let code_inner = inner_rect(code_area);
+
+  render_search_input(
+    frame,
+    search_area,
+    &state.search_query,
+    state.focus == FocusArea::List,
+  );
 
   let list_items: Vec<ListItem> = state
     .filtered_indices
     .iter()
     .map(|&idx| ListItem::new(Line::from(items[idx].label())))
     .collect();
-  let list_title = build_list_title(title, status, state);
+  let list_title = build_list_title(title, status);
   let list_block = Block::default()
     .title(list_title)
     .borders(Borders::ALL)
@@ -1483,6 +1533,7 @@ fn render_picker<T: ItemView>(
   frame.render_widget(preview, chunks[1]);
 
   PickerAreas {
+    search_area,
     list_inner,
     code_inner,
     code_area,
@@ -1499,19 +1550,32 @@ fn render_preset_picker(
 ) -> PickerAreas {
   let chunks = Layout::default()
     .direction(Direction::Horizontal)
-    .constraints([Constraint::Percentage(30), Constraint::Percentage(70)].as_ref())
+    .constraints([Constraint::Percentage(30), Constraint::Length(1), Constraint::Min(0)].as_ref())
     .split(area);
-  let list_area = chunks[0];
+  let list_column = chunks[0];
+  let list_chunks = Layout::default()
+    .direction(Direction::Vertical)
+    .constraints([Constraint::Length(3), Constraint::Min(0)].as_ref())
+    .split(list_column);
+  let search_area = list_chunks[0];
+  let list_area = list_chunks[1];
   let list_inner = list_inner_rect(list_area);
-  let summary_area = chunks[1];
+  let summary_area = chunks[2];
   let summary_inner = inner_rect(summary_area);
+
+  render_search_input(
+    frame,
+    search_area,
+    &state.search_query,
+    state.focus == FocusArea::List,
+  );
 
   let list_items: Vec<ListItem> = state
     .filtered_indices
     .iter()
     .map(|&idx| ListItem::new(Line::from(items[idx].label())))
     .collect();
-  let list_title = build_list_title("Select preset", status, state);
+  let list_title = build_list_title("Select preset", status);
   let list_block = Block::default()
     .title(list_title)
     .borders(Borders::ALL)
@@ -1568,6 +1632,7 @@ fn render_preset_picker(
   frame.render_widget(summary_panel, summary_area);
 
   PickerAreas {
+    search_area,
     list_inner,
     code_inner: summary_inner,
     code_area: summary_area,
@@ -1720,7 +1785,7 @@ fn render_tab_bar(
   ranges: &mut Vec<(u16, u16, usize)>,
 ) {
   ranges.clear();
-  let block = Block::default().borders(Borders::ALL);
+  let block = Block::default().borders(Borders::BOTTOM);
   let inner = block.inner(area);
   frame.render_widget(block, area);
 
@@ -1748,24 +1813,54 @@ fn render_tab_bar(
     }
   }
 
+  let title_label = format!(" {} ", APP_TITLE);
+  let title_width = title_label.len() as u16;
+  let sep_width = 1u16;
+  let used_width = cursor.saturating_sub(inner.x);
+  let total_needed = used_width
+    .saturating_add(sep_width)
+    .saturating_add(title_width);
+  let spacer_len = if inner.width > total_needed {
+    (inner.width - total_needed) as usize
+  } else {
+    1
+  };
+  spans.push(Span::raw(" ".repeat(spacer_len)));
+  spans.push(Span::raw("│"));
+  spans.push(Span::styled(
+    title_label,
+    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+  ));
+
   let line = Line::from(spans);
   let tabs = Paragraph::new(line).alignment(ratatui::layout::Alignment::Left);
   frame.render_widget(tabs, inner);
 }
 
-fn build_list_title(title: &str, status: Option<&str>, state: &PickerState) -> String {
-  let mut out = match status {
+fn build_list_title(title: &str, status: Option<&str>) -> String {
+  let out = match status {
     Some(status) => format!("{title}  [{status}]"),
     None => title.to_string(),
   };
-  if state.search_active || !state.search_query.is_empty() {
-    let cursor = if state.search_active { "_" } else { "" };
-    out.push_str("  [search: ");
-    out.push_str(&state.search_query);
-    out.push_str(cursor);
-    out.push(']');
-  }
   out
+}
+
+fn render_search_input(frame: &mut Frame, area: Rect, query: &str, focused: bool) {
+  let (content, style) = if query.is_empty() {
+    ("󰍉 Search...".to_string(), Style::default().fg(Color::DarkGray))
+  } else {
+    (format!("󰍉 {}", query), Style::default())
+  };
+  let block = Block::default()
+    .title("Search")
+    .borders(Borders::ALL)
+    .border_style(if focused {
+      Style::default().fg(Color::Yellow)
+    } else {
+      Style::default()
+    });
+  let input = Paragraph::new(Line::from(Span::styled(content, style))).block(block);
+  frame.render_widget(input, area);
 }
 
 fn clear_kitty_preview(backend: &PreviewBackend) {
@@ -1786,18 +1881,6 @@ fn mark_force_clear(
   waybar.force_clear = true;
   starship.force_clear = true;
   presets.force_clear = true;
-}
-
-fn stop_search(
-  theme: &mut PickerState,
-  waybar: &mut PickerState,
-  starship: &mut PickerState,
-  presets: &mut PickerState,
-) {
-  theme.search_active = false;
-  waybar.search_active = false;
-  starship.search_active = false;
-  presets.search_active = false;
 }
 
 fn active_picker_mut<'a>(
@@ -1841,8 +1924,8 @@ fn tab_index(tab: BrowseTab) -> usize {
     BrowseTab::Theme => 0,
     BrowseTab::Waybar => 1,
     BrowseTab::Starship => 2,
-    BrowseTab::Presets => 3,
-    BrowseTab::Review => 4,
+    BrowseTab::Review => 3,
+    BrowseTab::Presets => 4,
   }
 }
 
@@ -1851,8 +1934,8 @@ fn tab_from_index(index: usize) -> BrowseTab {
     0 => BrowseTab::Theme,
     1 => BrowseTab::Waybar,
     2 => BrowseTab::Starship,
-    3 => BrowseTab::Presets,
-    _ => BrowseTab::Review,
+    3 => BrowseTab::Review,
+    _ => BrowseTab::Presets,
   }
 }
 
@@ -2179,16 +2262,84 @@ fn filter_item_indices<T: ItemView>(items: &[T], query: &str) -> Vec<usize> {
   if query.trim().is_empty() {
     return (0..items.len()).collect();
   }
-  let matcher = SkimMatcherV2::default().ignore_case();
   let mut scored: Vec<(i64, usize, String)> = Vec::new();
   for (idx, item) in items.iter().enumerate() {
     let label = item.label();
-    if let Some(score) = matcher.fuzzy_match(&label, query) {
+    if let Some(score) = fuzzy_score(&label, query) {
       scored.push((score, idx, label));
     }
   }
   scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.2.cmp(&b.2)));
   scored.into_iter().map(|(_, idx, _)| idx).collect()
+}
+
+fn fuzzy_score(label: &str, query: &str) -> Option<i64> {
+  let query = query.trim();
+  if query.is_empty() {
+    return None;
+  }
+  let label_lower = label.to_lowercase();
+  let query_lower = query.to_lowercase();
+  let label_chars: Vec<char> = label_lower.chars().collect();
+  let query_chars: Vec<char> = query_lower.chars().collect();
+  let qlen = query_chars.len();
+
+  let mut score = 0i64;
+  let contains_pos = label_lower.find(&query_lower);
+  if let Some(pos) = contains_pos {
+    score += 20_000;
+    score += (5000 - pos as i64).max(0);
+    if pos == 0 {
+      score += 8000;
+    } else if is_word_boundary(&label_chars, pos) {
+      score += 2000;
+    }
+  }
+
+  let mut positions: Vec<usize> = Vec::with_capacity(query_chars.len());
+  let mut q = 0;
+  for (i, ch) in label_chars.iter().enumerate() {
+    if *ch == query_chars[q] {
+      positions.push(i);
+      q += 1;
+      if q == query_chars.len() {
+        break;
+      }
+    }
+  }
+  if q != query_chars.len() {
+    return if score > 0 { Some(score) } else { None };
+  }
+
+  score += 2000;
+  if positions.first() == Some(&0) {
+    score += 1500;
+  } else if let Some(first) = positions.first().copied() {
+    if is_word_boundary(&label_chars, first) {
+      score += 500;
+    }
+  }
+  for window in positions.windows(2) {
+    let prev = window[0];
+    let next = window[1];
+    if next == prev + 1 {
+      score += 400;
+    } else {
+      score -= (next - prev) as i64 * 2;
+    }
+  }
+  if qlen <= 2 && contains_pos.is_none() {
+    score -= 5000;
+  }
+  score += 500 - label_chars.len() as i64;
+  Some(score)
+}
+
+fn is_word_boundary(chars: &[char], idx: usize) -> bool {
+  if idx == 0 {
+    return true;
+  }
+  !chars[idx.saturating_sub(1)].is_alphanumeric()
 }
 
 fn selected_item_index(state: &PickerState, len: usize) -> Option<usize> {
@@ -2207,6 +2358,16 @@ fn selected_item_index(state: &PickerState, len: usize) -> Option<usize> {
 fn rebuild_filtered<T: ItemView>(state: &mut PickerState, items: &[T]) {
   let previous = selected_item_index(state, items.len());
   state.filtered_indices = filter_item_indices(items, &state.search_query);
+  let query_changed = state.search_query != state.last_query;
+  state.last_query = state.search_query.clone();
+  if query_changed && !state.search_query.trim().is_empty() {
+    ensure_selected(&mut state.list_state, state.filtered_indices.len());
+    if let Some(selected) = state.filtered_indices.first().copied() {
+      state.list_state.select(Some(0));
+      state.last_selected = Some(selected);
+    }
+    return;
+  }
   if let Some(item_index) = previous {
     if let Some(pos) = state
       .filtered_indices
@@ -2609,6 +2770,34 @@ mod tests {
     rebuild_filtered(&mut state, &items);
     assert!(state.filtered_indices.is_empty());
     assert_eq!(state.last_selected, Some(1));
+  }
+
+  #[test]
+  fn filter_items_falls_back_to_substring_match() {
+    let items = vec![
+      DummyItem {
+        label: "dracula".to_string(),
+      },
+      DummyItem {
+        label: "nord".to_string(),
+      },
+    ];
+    let filtered = filter_item_indices(&items, "dra");
+    assert_eq!(filtered, vec![0]);
+  }
+
+  #[test]
+  fn filter_items_supports_subsequence_match() {
+    let items = vec![
+      DummyItem {
+        label: "dracula".to_string(),
+      },
+      DummyItem {
+        label: "nord".to_string(),
+      },
+    ];
+    let filtered = filter_item_indices(&items, "drc");
+    assert_eq!(filtered, vec![0]);
   }
 
   #[test]
