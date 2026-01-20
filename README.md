@@ -11,12 +11,8 @@ What it does:
 - Includes a TUI app launcher entry in Omarchy (see “Omarchy App Launcher Integration”).
 
 ## Quick Start
-If you just want it working:
 ```
 curl -fsSL https://raw.githubusercontent.com/OldJobobo/theme-manager-plus/main/install.sh | bash
-```
-Then run:
-```
 theme-manager list
 theme-manager set <ThemeName>
 ```
@@ -28,24 +24,21 @@ theme-manager set <ThemeName>
 - `kitty` or `chafa` is optional for browse previews (text fallback otherwise).
 - `awww` is optional for wallpaper transition animations (used if installed; the daemon is not auto-started).
 
-## Install (Beginner-Friendly)
-Recommended (prebuilt binary, fastest):
+## Install
+Install latest (Linux x86_64):
 ```
 curl -fsSL https://raw.githubusercontent.com/OldJobobo/theme-manager-plus/main/install.sh | bash
 ```
-What it does:
-- Downloads the latest Linux x86_64 release binary.
-- Installs it to `~/.local/bin/theme-manager`.
-- Falls back to building from source if the download fails and this repo is present.
-Pin a version:
+Install a specific version:
 ```
-THEME_MANAGER_VERSION=0.2.0 curl -fsSL https://raw.githubusercontent.com/OldJobobo/theme-manager-plus/main/install.sh | bash
+THEME_MANAGER_VERSION=0.2.0 \
+  curl -fsSL https://raw.githubusercontent.com/OldJobobo/theme-manager-plus/main/install.sh | bash
 ```
 Uninstall:
 ```
 curl -fsSL https://raw.githubusercontent.com/OldJobobo/theme-manager-plus/main/uninstall.sh | bash
 ```
-Uninstall and remove config:
+Uninstall + remove config:
 ```
 curl -fsSL https://raw.githubusercontent.com/OldJobobo/theme-manager-plus/main/uninstall.sh | bash -s -- --purge
 ```
