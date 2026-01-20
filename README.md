@@ -25,7 +25,7 @@ curl -fsSL https://raw.githubusercontent.com/OldJobobo/theme-manager-plus/main/i
 ```
 Pin a version:
 ```
-THEME_MANAGER_VERSION=0.1.10 curl -fsSL https://raw.githubusercontent.com/OldJobobo/theme-manager-plus/main/install.sh | bash
+THEME_MANAGER_VERSION=0.2.0 curl -fsSL https://raw.githubusercontent.com/OldJobobo/theme-manager-plus/main/install.sh | bash
 ```
 Uninstall:
 ```

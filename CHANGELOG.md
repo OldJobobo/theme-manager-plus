@@ -4,7 +4,7 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
-## 0.1.10
+## 0.2.0
 - Added install/uninstall scripts for release binaries with a source-build fallback.
 
 ## 0.1.9

@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-## 0.1.10
+## 0.2.0
 Release install now uses prebuilt binaries with a source-build fallback, plus an uninstall script.
 
 ## 0.1.9
