@@ -210,7 +210,6 @@ pub fn apply_theme_setters(quiet: bool) -> Result<()> {
   run_optional("omarchy-theme-set-gnome", &[], quiet)?;
   run_optional("omarchy-theme-set-browser", &[], quiet)?;
   run_optional("omarchy-theme-set-vscode", &[], quiet)?;
-  run_optional("omarchy-theme-set-cursor", &[], quiet)?;
   run_optional("omarchy-theme-set-obsidian", &[], quiet)?;
   Ok(())
 }
