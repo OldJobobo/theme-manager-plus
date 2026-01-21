@@ -24,7 +24,6 @@ or
 ```
 thene-manager list
 theme-manager set <ThemeName>
-theme-manager
 ```
 
 ## Requirements
