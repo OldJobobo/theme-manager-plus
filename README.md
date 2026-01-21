@@ -15,7 +15,7 @@ What it does:
 ```
 curl -fsSL https://raw.githubusercontent.com/OldJobobo/theme-manager-plus/master/install.sh | bash
 ```
-then
+then Open a New terminal and type:
 ```
 theme-manager
 ```
