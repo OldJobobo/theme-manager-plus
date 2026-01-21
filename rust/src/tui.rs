@@ -30,6 +30,7 @@ use tempfile::TempDir;
 use crate::config::ResolvedConfig;
 use crate::paths::{normalize_theme_name, title_case_theme};
 use crate::theme_ops::{starship_from_defaults, waybar_from_defaults, StarshipMode, WaybarMode};
+use crate::theme_ops;
 use crate::presets;
 use crate::preview;
 
@@ -222,13 +223,13 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
       let label = title_case_theme(&name);
       let theme_path = theme_ops::resolve_theme_path(config, &name)?;
       let preview_path = preview::find_theme_preview(&theme_path);
-      OptionItem {
+      Ok(OptionItem {
         label,
         value: name,
         preview: preview_path,
-      }
+      })
     })
-    .collect();
+    .collect::<Result<Vec<_>>>()?;
 
   let backend = PreviewBackend::detect();
   let mut terminal = setup_terminal()?;
