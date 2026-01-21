@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_SOURCE="${BASH_SOURCE[0]:-$0}"
-SCRIPT_DIR="$(cd "$(dirname "${SCRIPT_SOURCE}")" && pwd)"
+SCRIPT_SOURCE="${BASH_SOURCE[0]-}"
+if [ -n "${SCRIPT_SOURCE}" ]; then
+  SCRIPT_DIR="$(cd "$(dirname "${SCRIPT_SOURCE}")" && pwd)"
+else
+  SCRIPT_DIR="$(pwd)"
+fi
 TARGET_DIR="${HOME}/.local/bin"
 TARGET_BIN="${TARGET_DIR}/theme-manager"
 RUST_DIR="${SCRIPT_DIR}/rust"
