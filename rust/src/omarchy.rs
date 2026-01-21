@@ -99,6 +99,21 @@ pub fn reload_components(
   waybar_restart_logs: bool,
 ) -> Result<()> {
   run_optional("omarchy-restart-terminal", &[], quiet)?;
+  restart_waybar_only(quiet, waybar_restart, waybar_restart_logs)?;
+  run_optional("omarchy-restart-swayosd", &[], quiet)?;
+  run_optional("hyprctl", &["reload"], quiet)?;
+  run_optional("makoctl", &["reload"], quiet)?;
+  if command_exists("pkill") {
+    let _ = run_command("pkill", &["-SIGUSR2", "btop"], true);
+  }
+  Ok(())
+}
+
+pub fn restart_waybar_only(
+  quiet: bool,
+  waybar_restart: Option<RestartAction>,
+  waybar_restart_logs: bool,
+) -> Result<()> {
   if let Some(restart) = waybar_restart {
     let waybar_quiet = quiet || !waybar_restart_logs;
     match restart {
@@ -115,12 +130,6 @@ pub fn reload_components(
     }
   } else {
     run_optional("omarchy-restart-waybar", &[], quiet)?;
-  }
-  run_optional("omarchy-restart-swayosd", &[], quiet)?;
-  run_optional("hyprctl", &["reload"], quiet)?;
-  run_optional("makoctl", &["reload"], quiet)?;
-  if command_exists("pkill") {
-    let _ = run_command("pkill", &["-SIGUSR2", "btop"], true);
   }
   Ok(())
 }

@@ -49,6 +49,9 @@ Common commands:
 - `theme-manager set <ThemeName>` — switch to a theme.
 - `theme-manager set <ThemeName> -w` — switch and apply the theme's Waybar theme.
 - `theme-manager browse` — pick a theme and Waybar option in a full‑screen selector.
+- `theme-manager` — open the browse screen (default action).
+- `theme-manager waybar <name|auto|none>` — apply Waybar only (no theme change).
+- `theme-manager starship <preset|named|none|theme>` — apply Starship only (no theme change).
 - Starship presets or user themes can be applied via config defaults or `browse`.
 
 ## Command Reference (Short)
@@ -56,13 +59,17 @@ Common commands:
   Switch themes. `-w` applies Waybar (auto or named). `-q` suppresses external command output.
 - `browse`  
   Full‑screen selector with theme previews; then Waybar and Starship pickers.
-  Run with no arguments to open browse.
+  Run with no arguments to open browse. The theme list includes a “No theme change” option.
 - `next`, `current`, `bg-next`  
   Cycle themes, show current theme, or cycle background.
 - `install <git-url>`, `update`, `remove [theme]`  
   Install/update/remove git-based themes.
 - `preset save|load|list|remove`  
   Save and apply named theme presets.
+- `waybar <mode>`  
+  Apply Waybar only (`auto`, `none`, or a shared Waybar theme name).
+- `starship <mode>`  
+  Apply Starship only (`none`, `theme`, `preset:<name>`, `named:<name>`, or a bare name).
 - `print-config`  
   Show resolved configuration values.
 - `version`  
@@ -83,6 +90,7 @@ Quiet mode:
 Pick a theme in a full-screen tabbed picker with a Review tab for apply. If `preview.png` (case-insensitive) exists in the theme folder it will show on the right; otherwise it falls back to `theme.png` (case-insensitive) or the first image in `backgrounds/`.
 Tabs: Theme, Waybar, Starship, Presets, Review. Apply with Ctrl+Enter by default; set `[tui] apply_key` to change it (example: `"ctrl+m"`). Ghostty users should unbind Ctrl+Enter in `~/.config/ghostty/config` or change the apply key.
 Save a preset from Review with Ctrl+S. Search field sits above each list: type to filter, `Backspace` deletes, `Ctrl+u` clears. A single-line status bar shows the current selections and shortcuts.
+Use the “No theme change” option in the Theme tab to only apply Waybar/Starship selections.
 
 Ghostty notes:
 - Change the apply key in Theme Manager+ by editing `~/.config/theme-manager/config.toml`:
@@ -130,6 +138,22 @@ Notes:
 
 **`print-config`**  
 Prints the resolved config values after applying all overrides.
+
+**`waybar <mode>`**  
+Apply Waybar only (no theme change).  
+Modes:
+- `auto` uses the theme’s `waybar-theme/` if it exists.
+- `none` leaves Waybar untouched.
+- `<name>` applies `~/.config/waybar/themes/<name>/`.
+
+**`starship <mode>`**  
+Apply Starship only (no theme change).  
+Modes:
+- `none` disables Starship changes.
+- `theme` uses `starship.yaml` from the current theme if present.
+- `preset:<name>` applies a Starship preset.
+- `named:<name>` applies `~/.config/starship-themes/<name>.toml`.
+- `<name>` uses a named theme if it exists, otherwise falls back to a preset.
 
 **`version`**  
 Prints the current CLI version.

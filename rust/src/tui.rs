@@ -35,6 +35,8 @@ use crate::presets;
 use crate::preview;
 
 const APP_TITLE: &str = concat!("Theme Manager+ v", env!("CARGO_PKG_VERSION"));
+const NO_THEME_CHANGE_VALUE: &str = "__no_theme_change__";
+const NO_THEME_CHANGE_LABEL: &str = "No theme change";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FocusArea {
@@ -54,6 +56,7 @@ enum BrowseTab {
 #[derive(Debug)]
 pub struct BrowseSelection {
   pub theme: String,
+  pub no_theme_change: bool,
   pub waybar: WaybarSelection,
   pub starship: StarshipSelection,
 }
@@ -214,6 +217,7 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
   }
   let mut themes = theme_ops::list_theme_entries_for_config(config)?;
   themes.sort();
+  themes.insert(0, NO_THEME_CHANGE_VALUE.to_string());
   if themes.is_empty() {
     return Err(anyhow!("no themes available"));
   }
@@ -221,6 +225,13 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
   let theme_items: Vec<OptionItem> = themes
     .into_iter()
     .map(|name| {
+      if name == NO_THEME_CHANGE_VALUE {
+        return Ok(OptionItem {
+          label: NO_THEME_CHANGE_LABEL.to_string(),
+          value: name,
+          preview: None,
+        });
+      }
       let label = title_case_theme(&name);
       let theme_path = theme_ops::resolve_theme_path(config, &name)?;
       let preview_path = preview::find_theme_preview(&theme_path);
@@ -254,9 +265,14 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
 
   let mut theme_state = PickerState::new();
   rebuild_filtered(&mut theme_state, &theme_items);
+  if let Ok(Some(current)) = crate::paths::current_theme_name(&config.current_theme_link) {
+    select_option_by_value(&mut theme_state, &theme_items, &current);
+  } else {
+    select_option_by_value(&mut theme_state, &theme_items, NO_THEME_CHANGE_VALUE);
+  }
   let mut selected_theme = current_theme_value(&theme_items, &theme_state)
     .ok_or_else(|| anyhow!("no themes available"))?;
-  let mut theme_path = theme_ops::resolve_theme_path(config, &selected_theme)?;
+  let mut theme_path = resolve_theme_path_for_selection(config, &selected_theme)?;
 
   let mut waybar_items = build_waybar_items(config, &theme_path)?;
   let mut starship_items = build_starship_items(config, &theme_path)?;
@@ -300,6 +316,9 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
             &mut theme_state,
             &backend,
             |idx| {
+              if theme_items[idx].value == NO_THEME_CHANGE_VALUE {
+                return Text::from("Keeping current theme.");
+              }
               match theme_ops::resolve_theme_path(config, &theme_items[idx].value) {
                 Ok(theme_path) => load_code_preview(
                   "hyprland.conf",
@@ -404,16 +423,16 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
         }
       }
 
-      render_status_bar(
-        frame,
-        status_area,
-        tab,
-        &selected_theme,
-        current_waybar_label(&waybar_items, &waybar_state),
-        current_starship_label(&starship_items, &starship_state),
-        status_active.then_some(status_message.as_str()),
-        preset_save_active,
-        &preset_save_input,
+          render_status_bar(
+            frame,
+            status_area,
+            tab,
+            &theme_label_for_display(&selected_theme),
+            current_waybar_label(&waybar_items, &waybar_state),
+            current_starship_label(&starship_items, &starship_state),
+            status_active.then_some(status_message.as_str()),
+            preset_save_active,
+            &preset_save_input,
       );
     })?;
 
@@ -635,8 +654,15 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
               continue 'event_loop;
             }
           if tab == BrowseTab::Review && apply_key_matches(config, key) {
+            let selection_theme = if selected_theme == NO_THEME_CHANGE_VALUE {
+              crate::paths::current_theme_name(&config.current_theme_link)?
+                .ok_or_else(|| anyhow!("current theme not set"))?
+            } else {
+              selected_theme.clone()
+            };
             let selection = BrowseSelection {
-              theme: selected_theme.clone(),
+              theme: selection_theme,
+              no_theme_change: selected_theme == NO_THEME_CHANGE_VALUE,
               waybar: current_waybar_selection(&waybar_items, &waybar_state),
               starship: current_starship_selection(
                 &starship_items,
@@ -905,7 +931,7 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
     if let Some(new_theme) = current_theme_value(&theme_items, &theme_state) {
       if new_theme != selected_theme {
         selected_theme = new_theme;
-        theme_path = theme_ops::resolve_theme_path(config, &selected_theme)?;
+        theme_path = resolve_theme_path_for_selection(config, &selected_theme)?;
         let waybar_key = selected_item_key(&waybar_items, &waybar_state);
         let starship_key = selected_item_key(&starship_items, &starship_state);
 
@@ -926,6 +952,24 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
         );
       }
     }
+  }
+}
+
+fn resolve_theme_path_for_selection(
+  config: &ResolvedConfig,
+  value: &str,
+) -> Result<PathBuf> {
+  if value == NO_THEME_CHANGE_VALUE {
+    return crate::paths::current_theme_dir(&config.current_theme_link);
+  }
+  theme_ops::resolve_theme_path(config, value)
+}
+
+fn theme_label_for_display(value: &str) -> String {
+  if value == NO_THEME_CHANGE_VALUE {
+    NO_THEME_CHANGE_LABEL.to_string()
+  } else {
+    value.to_string()
   }
 }
 

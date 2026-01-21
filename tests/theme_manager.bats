@@ -4,6 +4,7 @@ setup() {
   export HOME="${BATS_TEST_TMPDIR}/home"
   export THEME_MANAGER_SKIP_APPS=1
   export THEME_MANAGER_SKIP_HOOK=1
+  export OMARCHY_PATH="${HOME}/.local/share/omarchy"
   mkdir -p "${HOME}/.config/omarchy/themes"
   mkdir -p "${HOME}/.config/omarchy/current"
 
@@ -36,10 +37,17 @@ SCRIPT
   export BIN="${BATS_TEST_DIRNAME}/../bin/theme-manager"
 }
 
-@test "prints usage when no args" {
+@test "no args opens browse (fzf stubbed)" {
+  cat > "${BATS_TEST_TMPDIR}/bin/fzf" <<'SCRIPT'
+#!/usr/bin/env bash
+exit 0
+SCRIPT
+  chmod +x "${BATS_TEST_TMPDIR}/bin/fzf"
+
+  mkdir -p "${HOME}/.config/omarchy/themes/alpha"
+
   run "${BIN}"
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"Usage: theme-manager"* ]]
+  [ "$status" -eq 0 ]
 }
 
 @test "rejects unknown command" {
@@ -271,30 +279,18 @@ EOF
   [[ "$(cat "${HOME}/.config/waybar/config.jsonc")" == "b" ]]
 }
 
-@test "exec waybar mode uses tmplus-restart-waybar with paths" {
+@test "set -w uses symlink apply mode by default" {
   mkdir -p "${HOME}/.config/omarchy/themes/theme-a/waybar-theme"
   echo "a" > "${HOME}/.config/omarchy/themes/theme-a/waybar-theme/config.jsonc"
   echo "a" > "${HOME}/.config/omarchy/themes/theme-a/waybar-theme/style.css"
 
-  mkdir -p "${HOME}/.config/theme-manager"
-  cat > "${HOME}/.config/theme-manager/config" <<EOF
-DEFAULT_WAYBAR_MODE="auto"
-WAYBAR_APPLY_MODE="exec"
-EOF
-
-  cat > "${BATS_TEST_TMPDIR}/bin/tmplus-restart-waybar" <<'SCRIPT'
-#!/usr/bin/env bash
-echo "$@" > "${BATS_TEST_TMPDIR}/waybar-restart-args"
-SCRIPT
-  chmod +x "${BATS_TEST_TMPDIR}/bin/tmplus-restart-waybar"
-
   export THEME_MANAGER_SKIP_APPS=
   run "${BIN}" set theme-a -w
   [ "$status" -eq 0 ]
-  [ -f "${BATS_TEST_TMPDIR}/waybar-restart-args" ]
-  [[ "$(cat "${BATS_TEST_TMPDIR}/waybar-restart-args")" == *"-c ${HOME}/.config/omarchy/themes/theme-a/waybar-theme/config.jsonc"* ]]
-  [[ "$(cat "${BATS_TEST_TMPDIR}/waybar-restart-args")" == *"-s ${HOME}/.config/omarchy/themes/theme-a/waybar-theme/style.css"* ]]
-  [ ! -f "${HOME}/.config/waybar/config.jsonc" ]
+  [ -L "${HOME}/.config/waybar/config.jsonc" ]
+  [ -L "${HOME}/.config/waybar/style.css" ]
+  [[ "$(readlink "${HOME}/.config/waybar/config.jsonc")" == "${HOME}/.config/omarchy/themes/theme-a/waybar-theme/config.jsonc" ]]
+  [[ "$(readlink "${HOME}/.config/waybar/style.css")" == "${HOME}/.config/omarchy/themes/theme-a/waybar-theme/style.css" ]]
 }
 
 @test "remove refuses to delete the only theme" {
@@ -384,7 +380,22 @@ EOF
 }
 
 @test "install creates starship themes directory" {
-  run /bin/bash "${BATS_TEST_DIRNAME}/../install.sh"
+  cat > "${BATS_TEST_TMPDIR}/bin/curl" <<'SCRIPT'
+#!/usr/bin/env bash
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o)
+      shift
+      printf '%s\n' "#!/usr/bin/env bash" "exit 0" > "$1"
+      ;;
+  esac
+  shift || true
+done
+exit 0
+SCRIPT
+  chmod +x "${BATS_TEST_TMPDIR}/bin/curl"
+
+  THEME_MANAGER_VERSION="0.0.0" run /bin/bash "${BATS_TEST_DIRNAME}/../install.sh"
   [ "$status" -eq 0 ]
   [ -d "${HOME}/.config/starship-themes" ]
 }

@@ -89,7 +89,14 @@ pub fn run(cli: cli::Cli) -> Result<()> {
           starship_mode,
           debug_awww: cli.debug_awww,
         };
-        theme_ops::cmd_set(&ctx, &selection.theme)?;
+        if selection.no_theme_change {
+          let current_theme = paths::current_theme_dir(&config.current_theme_link)?;
+          let waybar_restart = waybar::prepare_waybar(&ctx, &current_theme)?;
+          omarchy::restart_waybar_only(quiet, waybar_restart, config.waybar_restart_logs)?;
+          starship::apply_starship(&ctx, &current_theme)?;
+        } else {
+          theme_ops::cmd_set(&ctx, &selection.theme)?;
+        }
       }
     }
     Command::Current => {
@@ -160,6 +167,27 @@ pub fn run(cli: cli::Cli) -> Result<()> {
         presets::remove_preset(&remove_args.name)?;
       }
     },
+    Command::Waybar(args) => {
+      let mode = parse_waybar_spec(&args.mode)?;
+      let (waybar_mode, waybar_name) = match mode {
+        presets::PresetWaybarValue::None => (WaybarMode::None, None),
+        presets::PresetWaybarValue::Auto => (WaybarMode::Auto, None),
+        presets::PresetWaybarValue::Named(name) => (WaybarMode::Named, Some(name)),
+      };
+      let quiet = args.quiet || config.quiet_default;
+      apply_waybar_only(&config, waybar_mode, waybar_name, quiet, skip_apps, cli.debug_awww)?;
+    }
+    Command::Starship(args) => {
+      let mode = parse_starship_spec(&args.mode, &config)?;
+      let starship_mode = match mode {
+        presets::PresetStarshipValue::None => StarshipMode::None,
+        presets::PresetStarshipValue::Preset(preset) => StarshipMode::Preset { preset },
+        presets::PresetStarshipValue::Named(name) => StarshipMode::Named { name },
+        presets::PresetStarshipValue::Theme => StarshipMode::Theme { path: None },
+      };
+      let quiet = args.quiet || config.quiet_default;
+      apply_starship_only(&config, starship_mode, quiet, skip_apps, cli.debug_awww)?;
+    }
   }
 
   Ok(())
@@ -338,6 +366,58 @@ fn parse_starship_spec(
   }
 
   Ok(presets::PresetStarshipValue::Preset(cleaned.to_string()))
+}
+
+fn apply_waybar_only(
+  config: &ResolvedConfig,
+  waybar_mode: WaybarMode,
+  waybar_name: Option<String>,
+  quiet: bool,
+  skip_apps: bool,
+  debug_awww: bool,
+) -> Result<()> {
+  if skip_apps {
+    return Ok(());
+  }
+  let theme_dir = paths::current_theme_dir(&config.current_theme_link)?;
+  let ctx = theme_ops::CommandContext {
+    config,
+    quiet,
+    skip_apps,
+    skip_hook: true,
+    waybar_mode,
+    waybar_name,
+    starship_mode: StarshipMode::None,
+    debug_awww,
+  };
+  let restart = waybar::prepare_waybar(&ctx, &theme_dir)?;
+  omarchy::restart_waybar_only(quiet, restart, config.waybar_restart_logs)?;
+  Ok(())
+}
+
+fn apply_starship_only(
+  config: &ResolvedConfig,
+  starship_mode: StarshipMode,
+  quiet: bool,
+  skip_apps: bool,
+  debug_awww: bool,
+) -> Result<()> {
+  if skip_apps {
+    return Ok(());
+  }
+  let theme_dir = paths::current_theme_dir(&config.current_theme_link)?;
+  let ctx = theme_ops::CommandContext {
+    config,
+    quiet,
+    skip_apps,
+    skip_hook: true,
+    waybar_mode: WaybarMode::None,
+    waybar_name: None,
+    starship_mode,
+    debug_awww,
+  };
+  starship::apply_starship(&ctx, &theme_dir)?;
+  Ok(())
 }
 
 #[allow(dead_code)]

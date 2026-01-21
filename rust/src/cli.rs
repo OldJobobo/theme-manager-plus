@@ -23,6 +23,8 @@ pub enum Command {
   Update,
   Remove(RemoveArgs),
   Preset(PresetArgs),
+  Waybar(WaybarArgs),
+  Starship(StarshipArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -96,4 +98,18 @@ pub struct PresetLoadArgs {
 #[derive(Parser, Debug)]
 pub struct PresetRemoveArgs {
   pub name: String,
+}
+
+#[derive(Parser, Debug)]
+pub struct WaybarArgs {
+  pub mode: String,
+  #[arg(short = 'q', long = "quiet")]
+  pub quiet: bool,
+}
+
+#[derive(Parser, Debug)]
+pub struct StarshipArgs {
+  pub mode: String,
+  #[arg(short = 'q', long = "quiet")]
+  pub quiet: bool,
 }

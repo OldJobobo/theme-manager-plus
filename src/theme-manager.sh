@@ -12,6 +12,8 @@ Commands:
   browse                Interactive theme + waybar selection (fzf required)
   current               Print the current theme
   bg-next               Switch to the next background in the current theme
+  waybar <mode>         Apply Waybar only (auto|none|<name>)
+  starship <mode>       Apply Starship only (preset:<name>|named:<name>|theme|none)
   print-config          Show resolved configuration values
   version               Show version
   install <git-url>     Clone and activate a theme from git
@@ -169,6 +171,16 @@ resolve_theme_path() {
     fi
   done <<< "$(theme_root_dirs)"
   return 1
+}
+
+resolve_current_theme_path() {
+  local current_dir
+  current_dir="$(current_theme_dir 2>/dev/null || true)"
+  if [[ -z "${current_dir}" ]]; then
+    echo "theme-manager: current theme not set" >&2
+    return 1
+  fi
+  echo "${current_dir}"
 }
 
 sorted_theme_entries() {
@@ -651,6 +663,10 @@ cmd_set() {
     fi
     return 1
   fi
+  if [[ -L "${theme_path}" && ! -e "${theme_path}" ]]; then
+    echo "theme-manager: theme symlink is broken: ${theme_path}" >&2
+    return 1
+  fi
 
   local current_link
   current_link="$(current_theme_link)"
@@ -677,6 +693,74 @@ cmd_set() {
   fi
 
   apply_waybar_theme
+  apply_starship
+}
+
+cmd_waybar() {
+  local mode="${1:-}"
+  if [[ -z "${mode}" ]]; then
+    echo "theme-manager: missing waybar mode (auto|none|<name>)" >&2
+    return 2
+  fi
+
+  case "${mode}" in
+    none)
+      WAYBAR_MODE=""
+      WAYBAR_NAME=""
+      ;;
+    auto)
+      WAYBAR_MODE="auto"
+      WAYBAR_NAME=""
+      ;;
+    *)
+      WAYBAR_MODE="named"
+      WAYBAR_NAME="${mode}"
+      ;;
+  esac
+
+  apply_waybar_theme
+}
+
+cmd_starship() {
+  local mode="${1:-}"
+  if [[ -z "${mode}" ]]; then
+    echo "theme-manager: missing starship mode (preset:<name>|named:<name>|theme|none)" >&2
+    return 2
+  fi
+
+  STARSHIP_MODE=""
+  STARSHIP_PRESET=""
+  STARSHIP_NAME=""
+  STARSHIP_THEME_PATH=""
+
+  case "${mode}" in
+    none)
+      STARSHIP_MODE="none"
+      ;;
+    theme)
+      STARSHIP_MODE="theme"
+      ;;
+    preset:*)
+      STARSHIP_MODE="preset"
+      STARSHIP_PRESET="${mode#preset:}"
+      ;;
+    named:*)
+      STARSHIP_MODE="named"
+      STARSHIP_NAME="${mode#named:}"
+      ;;
+    *)
+      local themes_dir
+      themes_dir="$(starship_themes_dir)"
+      if [[ -f "${themes_dir}/${mode}.toml" ]]; then
+        STARSHIP_MODE="named"
+        STARSHIP_NAME="${mode}"
+      else
+        STARSHIP_MODE="preset"
+        STARSHIP_PRESET="${mode}"
+      fi
+      ;;
+  esac
+
   apply_starship
 }
 
@@ -903,13 +987,21 @@ PREVIEW_CMD
     else
       preview_bind='q:abort,esc:abort'
     fi
-    theme_choice="$(printf '%s\n' "${themes}" | while IFS= read -r name; do
+    theme_choice="$(printf '%s\n' "__no_theme_change__" "${themes}" | while IFS= read -r name; do
+      if [[ "${name}" == "__no_theme_change__" ]]; then
+        printf '%s\t%s\n' "__no_theme_change__" "No theme change"
+        continue
+      fi
       theme_path="$(resolve_theme_path "${name}" || true)"
       [[ -z "${theme_path}" ]] && continue
       printf '%s\t%s\n' "${theme_path}" "$(title_case_theme "${name}")"
     done | fzf --prompt='Select theme: ' --cycle --reverse --height=100% --border --border-label=" Theme Manager+ v${VERSION} " --border-label-pos=2 --padding=1 --preview "${preview_cmd}" --preview-window=right,75% --preview-border=rounded --with-nth=2 --delimiter=$'\t' --bind "${preview_bind}")" || return 0
   else
-    theme_choice="$(printf '%s\n' "${themes}" | while IFS= read -r name; do
+    theme_choice="$(printf '%s\n' "__no_theme_change__" "${themes}" | while IFS= read -r name; do
+      if [[ "${name}" == "__no_theme_change__" ]]; then
+        printf '%s\t%s\n' "__no_theme_change__" "No theme change"
+        continue
+      fi
       theme_path="$(resolve_theme_path "${name}" || true)"
       [[ -z "${theme_path}" ]] && continue
       printf '%s\t%s\n' "${theme_path}" "$(title_case_theme "${name}")"
@@ -921,11 +1013,17 @@ PREVIEW_CMD
     return 0
   fi
 
-  local theme_id
-  theme_id="$(basename "${theme_path}")"
-  if [[ ! -d "${theme_path}" && ! -L "${theme_path}" ]]; then
-    echo "theme-manager: selected theme missing: ${theme_path}" >&2
-    return 1
+  local theme_id=""
+  local no_theme_change=0
+  if [[ "${theme_path}" == "__no_theme_change__" ]]; then
+    no_theme_change=1
+    theme_path="$(resolve_current_theme_path)"
+  else
+    theme_id="$(basename "${theme_path}")"
+    if [[ ! -d "${theme_path}" && ! -L "${theme_path}" ]]; then
+      echo "theme-manager: selected theme missing: ${theme_path}" >&2
+      return 1
+    fi
   fi
 
   WAYBAR_OPTIONS=()
@@ -1178,6 +1276,12 @@ PREVIEW_SCRIPT
 
   apply_default_starship
 
+  if [[ ${no_theme_change} -eq 1 ]]; then
+    apply_waybar_theme
+    apply_starship
+    return 0
+  fi
+
   if ! cmd_set "${theme_id}"; then
     echo "theme-manager: browse failed applying theme: ${theme_id}" >&2
     return 1
@@ -1371,6 +1475,14 @@ main() {
     remove)
       shift
       cmd_remove "${1:-}"
+      ;;
+    waybar)
+      shift
+      cmd_waybar "${1:-}"
+      ;;
+    starship)
+      shift
+      cmd_starship "${1:-}"
       ;;
     help|-h|--help)
       print_usage
