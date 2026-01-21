@@ -21,10 +21,27 @@ Commands:
 USAGE
 }
 
-VERSION="0.2.3"
+VERSION="0.2.4"
 
 theme_root_dir() {
   echo "${THEME_ROOT_DIR:-${HOME}/.config/omarchy/themes}"
+}
+
+theme_root_dirs() {
+  local roots=()
+  local user_root
+  user_root="$(theme_root_dir)"
+  if [[ -d "${user_root}" ]]; then
+    roots+=("${user_root}")
+  fi
+
+  local omarchy_root="${OMARCHY_PATH:-${HOME}/.local/share/omarchy}"
+  local default_root="${omarchy_root}/themes"
+  if [[ -d "${default_root}" && "${default_root}" != "${user_root}" ]]; then
+    roots+=("${default_root}")
+  fi
+
+  printf '%s\n' "${roots[@]}"
 }
 
 current_theme_link() {
@@ -116,19 +133,42 @@ current_theme_dir() {
 }
 
 list_theme_entries() {
-  local themes_dir
-  themes_dir="$(theme_root_dir)"
-
-  if [[ ! -d "${themes_dir}" ]]; then
+  local roots
+  roots="$(theme_root_dirs)"
+  if [[ -z "${roots}" ]]; then
     return 1
   fi
 
-  local entry
-  for entry in "${themes_dir}"/*; do
-    if [[ -d "${entry}" || -L "${entry}" ]]; then
-      basename "${entry}"
+  declare -A seen=()
+  local root entry name
+  while IFS= read -r root; do
+    [[ -z "${root}" ]] && continue
+    for entry in "${root}"/*; do
+      if [[ -d "${entry}" || -L "${entry}" ]]; then
+        name="$(basename "${entry}")"
+        if [[ -z "${seen[${name}]:-}" ]]; then
+          seen["${name}"]=1
+          printf '%s\n' "${name}"
+        fi
+      fi
+    done
+  done <<< "${roots}"
+}
+
+resolve_theme_path() {
+  local theme_name="${1:-}"
+  local normalized
+  normalized="$(normalize_theme_name "${theme_name}")"
+  local root candidate
+  while IFS= read -r root; do
+    [[ -z "${root}" ]] && continue
+    candidate="${root}/${normalized}"
+    if [[ -d "${candidate}" || -L "${candidate}" ]]; then
+      echo "${candidate}"
+      return 0
     fi
-  done
+  done <<< "$(theme_root_dirs)"
+  return 1
 }
 
 sorted_theme_entries() {
@@ -602,15 +642,8 @@ cmd_set() {
   local normalized_name
   normalized_name="$(normalize_theme_name "${theme_name}")"
 
-  local themes_dir
-  themes_dir="$(theme_root_dir)"
-
-  local theme_path="${themes_dir}/${normalized_name}"
-  if [[ -L "${theme_path}" && ! -e "${theme_path}" ]]; then
-    echo "theme-manager: theme symlink is broken: ${theme_path}" >&2
-    return 1
-  fi
-  if [[ ! -d "${theme_path}" && ! -L "${theme_path}" ]]; then
+  local theme_path=""
+  if ! theme_path="$(resolve_theme_path "${normalized_name}")"; then
     if [[ "${normalized_name}" != "${theme_name}" ]]; then
       echo "theme-manager: theme not found: ${normalized_name} (from '${theme_name}')" >&2
     else
@@ -862,9 +895,6 @@ PREVIEW_CMD
 )"
   fi
 
-  local themes_dir
-  themes_dir="$(theme_root_dir)"
-
   local theme_choice
   if [[ ${preview_supported} -eq 1 ]]; then
     local preview_bind='q:abort'
@@ -873,9 +903,17 @@ PREVIEW_CMD
     else
       preview_bind='q:abort,esc:abort'
     fi
-    theme_choice="$(printf '%s\n' "${themes}" | while IFS= read -r name; do printf '%s\t%s\n' "${themes_dir}/${name}" "$(title_case_theme "${name}")"; done | fzf --prompt='Select theme: ' --cycle --reverse --height=100% --border --border-label=" Theme Manager+ v${VERSION} " --border-label-pos=2 --padding=1 --preview "${preview_cmd}" --preview-window=right,75% --preview-border=rounded --with-nth=2 --delimiter=$'\t' --bind "${preview_bind}")" || return 0
+    theme_choice="$(printf '%s\n' "${themes}" | while IFS= read -r name; do
+      theme_path="$(resolve_theme_path "${name}" || true)"
+      [[ -z "${theme_path}" ]] && continue
+      printf '%s\t%s\n' "${theme_path}" "$(title_case_theme "${name}")"
+    done | fzf --prompt='Select theme: ' --cycle --reverse --height=100% --border --border-label=" Theme Manager+ v${VERSION} " --border-label-pos=2 --padding=1 --preview "${preview_cmd}" --preview-window=right,75% --preview-border=rounded --with-nth=2 --delimiter=$'\t' --bind "${preview_bind}")" || return 0
   else
-    theme_choice="$(printf '%s\n' "${themes}" | while IFS= read -r name; do printf '%s\t%s\n' "${themes_dir}/${name}" "$(title_case_theme "${name}")"; done | fzf --prompt='Select theme: ' --cycle --reverse --height=100% --border --border-label=" Theme Manager+ v${VERSION} " --border-label-pos=2 --padding=1 --with-nth=2 --delimiter=$'\t' --bind 'q:abort')" || return 0
+    theme_choice="$(printf '%s\n' "${themes}" | while IFS= read -r name; do
+      theme_path="$(resolve_theme_path "${name}" || true)"
+      [[ -z "${theme_path}" ]] && continue
+      printf '%s\t%s\n' "${theme_path}" "$(title_case_theme "${name}")"
+    done | fzf --prompt='Select theme: ' --cycle --reverse --height=100% --border --border-label=" Theme Manager+ v${VERSION} " --border-label-pos=2 --padding=1 --with-nth=2 --delimiter=$'\t' --bind 'q:abort')" || return 0
   fi
 
   local theme_path="${theme_choice%%$'\t'*}"

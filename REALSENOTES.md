@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 0.2.4
+- Theme picker now shows both Omarchy default and user themes.
+
 ## 0.2.3
 - Install script works when run via `curl | bash`.
 - Waybar symlinks now target the selected theme directory (avoids broken links after Omarchy switches).

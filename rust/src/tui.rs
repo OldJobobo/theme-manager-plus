@@ -211,7 +211,7 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
   if quiet {
     // currently unused, but reserved for future use
   }
-  let themes = list_theme_entries(&config.theme_root_dir)?;
+  let themes = theme_ops::list_theme_entries_for_config(config)?;
   if themes.is_empty() {
     return Err(anyhow!("no themes available"));
   }
@@ -220,7 +220,7 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
     .into_iter()
     .map(|name| {
       let label = title_case_theme(&name);
-      let theme_path = config.theme_root_dir.join(&name);
+      let theme_path = theme_ops::resolve_theme_path(config, &name)?;
       let preview_path = preview::find_theme_preview(&theme_path);
       OptionItem {
         label,
@@ -254,7 +254,7 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
   rebuild_filtered(&mut theme_state, &theme_items);
   let mut selected_theme = current_theme_value(&theme_items, &theme_state)
     .ok_or_else(|| anyhow!("no themes available"))?;
-  let mut theme_path = config.theme_root_dir.join(&selected_theme);
+  let mut theme_path = theme_ops::resolve_theme_path(config, &selected_theme)?;
 
   let mut waybar_items = build_waybar_items(config, &theme_path)?;
   let mut starship_items = build_starship_items(config, &theme_path)?;
@@ -298,7 +298,7 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
             &mut theme_state,
             &backend,
             |idx| {
-              let theme_path = config.theme_root_dir.join(&theme_items[idx].value);
+              let theme_path = theme_ops::resolve_theme_path(config, &theme_items[idx].value)?;
               load_code_preview(
                 "hyprland.conf",
                 theme_path.join("hyprland.conf"),
@@ -904,7 +904,7 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
     if let Some(new_theme) = current_theme_value(&theme_items, &theme_state) {
       if new_theme != selected_theme {
         selected_theme = new_theme;
-        theme_path = config.theme_root_dir.join(&selected_theme);
+        theme_path = theme_ops::resolve_theme_path(config, &selected_theme)?;
         let waybar_key = selected_item_key(&waybar_items, &waybar_state);
         let starship_key = selected_item_key(&starship_items, &starship_state);
 
@@ -2039,7 +2039,7 @@ fn apply_preset_to_states(
   }
 
   *selected_theme = applied_theme.clone();
-  *theme_path = config.theme_root_dir.join(&applied_theme);
+  *theme_path = theme_ops::resolve_theme_path(config, &applied_theme)?;
 
   *waybar_items = build_waybar_items(config, theme_path)?;
   *starship_items = build_starship_items(config, theme_path)?;
@@ -2490,27 +2490,6 @@ fn previous_index(current: Option<usize>, len: usize) -> usize {
     }
     None => 0,
   }
-}
-
-fn list_theme_entries(theme_root: &Path) -> Result<Vec<String>> {
-  if !theme_root.is_dir() {
-    return Err(anyhow!(
-      "themes directory not found: {}",
-      theme_root.to_string_lossy()
-    ));
-  }
-  let mut entries = Vec::new();
-  for entry in fs::read_dir(theme_root)? {
-    let entry = entry?;
-    let path = entry.path();
-    if path.is_dir() || is_symlink(&path)? {
-      if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-        entries.push(name.to_string());
-      }
-    }
-  }
-  entries.sort();
-  Ok(entries)
 }
 
 fn list_waybar_themes(waybar_themes_dir: &Path) -> Result<Vec<String>> {

@@ -1,4 +1,6 @@
 use anyhow::{anyhow, Result};
+use std::collections::HashSet;
+use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
@@ -69,7 +71,7 @@ pub fn starship_from_defaults(config: &ResolvedConfig) -> StarshipMode {
 }
 
 pub fn cmd_list(config: &ResolvedConfig) -> Result<()> {
-  let entries = sorted_theme_entries(&config.theme_root_dir)?;
+  let entries = sorted_theme_entries_for_config(config)?;
   for name in entries {
     println!("{}", title_case_theme(&name));
   }
@@ -78,7 +80,7 @@ pub fn cmd_list(config: &ResolvedConfig) -> Result<()> {
 
 pub fn cmd_set(ctx: &CommandContext<'_>, theme_name: &str) -> Result<()> {
   let normalized = normalize_theme_name(theme_name);
-  let theme_path = ctx.config.theme_root_dir.join(&normalized);
+  let theme_path = resolve_theme_path(ctx.config, &normalized)?;
 
   if is_broken_symlink(&theme_path)? {
     return Err(anyhow!(
@@ -139,7 +141,7 @@ pub fn cmd_set(ctx: &CommandContext<'_>, theme_name: &str) -> Result<()> {
 }
 
 pub fn cmd_next(ctx: &CommandContext<'_>) -> Result<()> {
-  let entries = sorted_theme_entries(&ctx.config.theme_root_dir)?;
+  let entries = sorted_theme_entries_for_config(ctx.config)?;
   if entries.is_empty() {
     return Err(anyhow!("no themes available"));
   }
@@ -220,6 +222,71 @@ pub fn list_theme_entries(theme_root: &Path) -> Result<Vec<String>> {
     }
   }
   Ok(entries)
+}
+
+pub fn list_theme_entries_for_config(config: &ResolvedConfig) -> Result<Vec<String>> {
+  let mut entries = Vec::new();
+  let mut seen = HashSet::new();
+  for root in theme_roots(config) {
+    if !root.is_dir() {
+      continue;
+    }
+    for entry in fs::read_dir(&root)? {
+      let entry = entry?;
+      let path = entry.path();
+      if path.is_dir() || is_symlink(&path)? {
+        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+          if seen.insert(name.to_string()) {
+            entries.push(name.to_string());
+          }
+        }
+      }
+    }
+  }
+  Ok(entries)
+}
+
+fn sorted_theme_entries_for_config(config: &ResolvedConfig) -> Result<Vec<String>> {
+  let mut entries = list_theme_entries_for_config(config)?;
+  entries.sort();
+  Ok(entries)
+}
+
+pub fn resolve_theme_path(config: &ResolvedConfig, normalized: &str) -> Result<PathBuf> {
+  for root in theme_roots(config) {
+    let candidate = root.join(normalized);
+    if candidate.is_dir() || is_symlink(&candidate)? {
+      return Ok(candidate);
+    }
+  }
+  Err(anyhow!("theme not found: {normalized}"))
+}
+
+fn theme_roots(config: &ResolvedConfig) -> Vec<PathBuf> {
+  let mut roots = Vec::new();
+  roots.push(config.theme_root_dir.clone());
+
+  let mut omarchy_path = env::var("OMARCHY_PATH").ok().map(PathBuf::from);
+  if omarchy_path.is_none() {
+    if let Some(bin_dir) = &config.omarchy_bin_dir {
+      if let Some(parent) = bin_dir.parent() {
+        omarchy_path = Some(parent.to_path_buf());
+      }
+    }
+  }
+  if omarchy_path.is_none() {
+    if let Ok(home) = env::var("HOME") {
+      omarchy_path = Some(PathBuf::from(home).join(".local/share/omarchy"));
+    }
+  }
+  if let Some(omarchy_path) = omarchy_path {
+    let omarchy_themes = omarchy_path.join("themes");
+    if omarchy_themes != config.theme_root_dir {
+      roots.push(omarchy_themes);
+    }
+  }
+
+  roots
 }
 
 fn next_theme(entries: &[String], current: Option<&str>) -> String {

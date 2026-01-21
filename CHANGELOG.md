@@ -4,6 +4,9 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## 0.2.4
+- Theme listing and selection now include both Omarchy default and user themes.
+
 ## 0.2.3
 - Fixed `install.sh` to handle piped execution without `BASH_SOURCE` errors.
 - Waybar symlinks now point at the selected theme directory instead of `current/theme`.

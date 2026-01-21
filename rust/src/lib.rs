@@ -210,7 +210,7 @@ fn build_preset_entry(
   let theme = match &args.theme {
     Some(theme) => {
       let normalized = paths::normalize_theme_name(theme);
-      let theme_path = config.theme_root_dir.join(&normalized);
+      let theme_path = theme_ops::resolve_theme_path(config, &normalized)?;
       if !theme_path.is_dir() && !paths::is_symlink(&theme_path)? {
         return Err(anyhow!("theme not found: {normalized}"));
       }
