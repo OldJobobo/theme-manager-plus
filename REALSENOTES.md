@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 0.2.6
+- Added configurable TUI apply shortcut (`[tui] apply_key`) for terminals like Ghostty.
+
 ## 0.2.5
 - Removed the `omarchy-theme-set-cursor` call (Cursor is handled by Omarchy’s VS Code setter).
 

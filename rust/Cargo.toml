@@ -1,6 +1,6 @@
 [package]
 name = "theme-manager-plus"
-version = "0.2.5"
+version = "0.2.6"
 edition = "2021"
 description = "Rust rewrite of Theme Manager Plus (scaffolding)"
 license = "MIT"
