@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 0.2.2
+Waybar apply now symlinks by default; set `WAYBAR_APPLY_MODE="copy"` to copy instead.
+
 ## 0.2.1
 Running `theme-manager` with no arguments now opens the browse picker.
 

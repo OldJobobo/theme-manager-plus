@@ -4,6 +4,9 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## 0.2.2
+- Always symlink Waybar config/style unless `WAYBAR_APPLY_MODE="copy"` is set.
+
 ## 0.2.1
 - Default to the browse picker when running `theme-manager` with no arguments.
 

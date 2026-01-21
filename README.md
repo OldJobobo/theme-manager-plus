@@ -40,7 +40,7 @@ curl -fsSL https://raw.githubusercontent.com/OldJobobo/theme-manager-plus/main/i
 ```
 Install a specific version:
 ```
-THEME_MANAGER_VERSION=0.2.1 \
+THEME_MANAGER_VERSION=0.2.2 \
   curl -fsSL https://raw.githubusercontent.com/OldJobobo/theme-manager-plus/main/install.sh | bash
 ```
 Uninstall:
@@ -133,17 +133,13 @@ Two ways to apply Waybar:
 Behavior:
 - `-w` with no name uses the theme’s `waybar-theme/` if present.
 - `-w <name>` uses the shared Waybar theme.
-- Files are copied into `~/.config/waybar/` (no backups) when `WAYBAR_APPLY_MODE="copy"` or when exec mode falls back.
-- Waybar is restarted after apply in both modes.
+- Files are symlinked into `~/.config/waybar/` by default; set `WAYBAR_APPLY_MODE="copy"` to copy instead.
+- Waybar is restarted after apply.
 
 Notes:
 - If a theme has `waybar-theme/preview.png` (or `preview.PNG`), the browse screen shows it.
 - Theme previews also fall back to `theme.png` (case-insensitive) in the theme root.
 - If there is no preview, the browser falls back to the first image in `backgrounds/`.
-- Optional helper: `extras/omarchy/tmplus-restart-waybar` mirrors the built-in Waybar exec restart (and is used by the Bash CLI).
-- The Rust binary uses a built-in restart in exec mode (pkill + `uwsm-app -- waybar -c/-s`) unless `WAYBAR_RESTART_CMD` overrides it.
-- Waybar exec restart output is silenced by default; set `waybar.restart_logs = true` to inherit logs in the launching terminal.
-- The Bash CLI falls back to copy mode with a warning if the helper is missing.
 - `install.sh` downloads a release binary when possible and falls back to building from source if it is run from a git checkout.
 
 ### Starship
@@ -278,8 +274,8 @@ When adding new features:
 **Why not replace Omarchy’s theming?**  
 Because Omarchy already owns the theme system; this tool just drives it.
 
-**Why copy Waybar files instead of symlinks?**  
-Copying is more reliable with Waybar restarts and avoids symlink edge cases.
+**Why symlink Waybar files?**  
+Waybar themes often import `../omarchy/current/theme/waybar.css`, so symlinks preserve Omarchy’s expected path.
 
 **Can I use custom theme paths?**  
 Yes, set `THEME_ROOT_DIR` in your config.

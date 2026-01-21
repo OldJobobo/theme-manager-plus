@@ -21,12 +21,9 @@ WAYBAR_DIR="$HOME/.config/waybar"
 WAYBAR_THEMES_DIR="$HOME/.config/waybar/themes"
 
 # Waybar apply mode:
+# - "symlink" → symlink config/style into WAYBAR_DIR and restart Waybar
 # - "copy" → copy config/style into WAYBAR_DIR and restart Waybar
-# - "exec" → restart Waybar with -c/-s flags (uses tmplus-restart-waybar; falls back to copy if missing)
-WAYBAR_APPLY_MODE="exec"
-
-# Optional override for Waybar restart command (used when WAYBAR_APPLY_MODE="exec").
-# WAYBAR_RESTART_CMD="tmplus-restart-waybar"
+WAYBAR_APPLY_MODE="symlink"
 
 # Starship config file (active config lives here).
 STARSHIP_CONFIG="$HOME/.config/starship.toml"

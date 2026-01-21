@@ -9,9 +9,7 @@
 # starship_themes_dir = "~/.config/starship-themes"
 
 [waybar]
-# apply_mode = "exec" # copy|exec
-# restart_cmd = "" # optional override (built-in exec restart is default)
-# restart_logs = false # set true to keep Waybar logs attached to the launching terminal
+# apply_mode = "symlink" # symlink|copy
 # default_mode = "auto" # auto|named|"" (empty = none)
 # default_name = ""
 

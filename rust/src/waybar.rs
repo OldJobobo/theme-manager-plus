@@ -3,8 +3,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::omarchy::{self, RestartAction, RestartCommand};
+use crate::omarchy::{RestartAction, RestartCommand};
 use crate::theme_ops::{CommandContext, WaybarMode};
+use walkdir::WalkDir;
 
 const WAYBAR_LINKS_FILE: &str = ".theme-manager-waybar-links";
 
@@ -43,61 +44,66 @@ pub fn prepare_waybar(ctx: &CommandContext<'_>, theme_dir: &Path) -> Result<Opti
   cleanup_waybar_links(&ctx.config.waybar_dir, ctx.quiet)?;
 
   let apply_mode = ctx.config.waybar_apply_mode.as_str();
-  if apply_mode == "exec" {
-    if ctx.config.waybar_restart_cmd.is_none()
-      && needs_waybar_symlink_for_import(&ctx.config.waybar_dir, &style_path)?
-    {
-      if !ctx.quiet {
-        eprintln!(
-          "theme-manager: waybar style uses relative omarchy import; falling back to symlink mode"
-        );
-      }
-      return apply_symlink(ctx, &config_path, &style_path);
-    }
-
-    if let Some(restart_cmd) = &ctx.config.waybar_restart_cmd {
-      let mut parts = restart_cmd.split_whitespace();
-      let cmd = match parts.next() {
-        Some(cmd) => cmd,
-        None => return Err(anyhow!("invalid waybar restart command")),
-      };
-      if !omarchy::command_exists(cmd) {
-        return Err(anyhow!("waybar restart command not found: {cmd}"));
-      }
-      if !ctx.quiet {
-        println!("theme-manager: applying waybar config via {cmd}");
-      }
-      let mut args: Vec<String> = parts.map(|part| part.to_string()).collect();
-      let config_str = config_path.to_string_lossy().to_string();
-      let style_str = style_path.to_string_lossy().to_string();
-      args.push("-c".to_string());
-      args.push(config_str);
-      args.push("-s".to_string());
-      args.push(style_str);
-      return Ok(Some(RestartAction::Command(RestartCommand {
-        cmd: cmd.to_string(),
-        args,
-      })));
-    }
-
-    if !ctx.quiet {
-      println!("theme-manager: applying waybar config via built-in restart");
-    }
-    return Ok(Some(RestartAction::WaybarExec {
-      config_path: config_path.to_path_buf(),
-      style_path: style_path.to_path_buf(),
-    }));
+  if apply_mode == "copy" {
+    return apply_copy(ctx, &config_path, &style_path);
   }
 
   apply_symlink(ctx, &config_path, &style_path)
 }
 
-fn needs_waybar_symlink_for_import(waybar_dir: &Path, style_path: &Path) -> Result<bool> {
-  if style_path.parent() == Some(waybar_dir) {
-    return Ok(false);
+fn apply_copy(
+  ctx: &CommandContext<'_>,
+  config_path: &Path,
+  style_path: &Path,
+) -> Result<Option<RestartAction>> {
+  fs::create_dir_all(&ctx.config.waybar_dir)?;
+  let theme_waybar_dir = config_path
+    .parent()
+    .ok_or_else(|| anyhow!("waybar config has no parent directory"))?;
+  let mut backup_dir = None;
+
+  if !ctx.quiet {
+    println!(
+      "theme-manager: copying waybar config from {}",
+      config_path.to_string_lossy()
+    );
+    println!(
+      "theme-manager: copying waybar style from {}",
+      style_path.to_string_lossy()
+    );
   }
-  let content = fs::read_to_string(style_path)?;
-  Ok(content.contains("../omarchy/current/theme/waybar.css"))
+
+  let dest_config = ctx.config.waybar_dir.join("config.jsonc");
+  let dest_style = ctx.config.waybar_dir.join("style.css");
+  replace_existing_path(
+    &dest_config,
+    "config.jsonc",
+    &ctx.config.waybar_themes_dir,
+    &mut backup_dir,
+    ctx.quiet,
+  )?;
+  replace_existing_path(
+    &dest_style,
+    "style.css",
+    &ctx.config.waybar_themes_dir,
+    &mut backup_dir,
+    ctx.quiet,
+  )?;
+  fs::copy(config_path, &dest_config)?;
+  fs::copy(style_path, &dest_style)?;
+
+  copy_waybar_subdirs(
+    theme_waybar_dir,
+    &ctx.config.waybar_dir,
+    &ctx.config.waybar_themes_dir,
+    &mut backup_dir,
+    ctx.quiet,
+  )?;
+
+  Ok(Some(RestartAction::Command(RestartCommand {
+    cmd: "omarchy-restart-waybar".to_string(),
+    args: Vec::new(),
+  })))
 }
 
 fn apply_symlink(
@@ -234,6 +240,72 @@ fn link_waybar_subdirs(
     manifest.push('\n');
   }
   fs::write(manifest_path, manifest)?;
+  Ok(())
+}
+
+fn copy_waybar_subdirs(
+  theme_waybar_dir: &Path,
+  waybar_dir: &Path,
+  waybar_themes_dir: &Path,
+  backup_dir: &mut Option<PathBuf>,
+  quiet: bool,
+) -> Result<()> {
+  for entry in fs::read_dir(theme_waybar_dir)? {
+    let entry = entry?;
+    let name = entry.file_name();
+    let name_str = name.to_string_lossy();
+    if name_str == "config.jsonc" || name_str == "style.css" {
+      continue;
+    }
+    let file_type = entry.file_type()?;
+    let entry_path = entry.path();
+    let is_dir = if file_type.is_dir() {
+      true
+    } else if file_type.is_symlink() {
+      fs::metadata(&entry_path).map(|meta| meta.is_dir()).unwrap_or(false)
+    } else {
+      false
+    };
+    if !is_dir {
+      continue;
+    }
+
+    let dest = waybar_dir.join(&name);
+    replace_existing_path(&dest, &name_str, waybar_themes_dir, backup_dir, quiet)?;
+    copy_dir_recursive(&entry_path, &dest)?;
+    if !quiet {
+      println!("theme-manager: copying waybar subdir {}", dest.to_string_lossy());
+    }
+  }
+  Ok(())
+}
+
+fn copy_dir_recursive(source: &Path, dest: &Path) -> Result<()> {
+  for entry in WalkDir::new(source).follow_links(false) {
+    let entry = entry?;
+    let entry_path = entry.path();
+    let rel = entry_path.strip_prefix(source)?;
+    if rel.as_os_str().is_empty() {
+      continue;
+    }
+    let target_path = dest.join(rel);
+    let file_type = entry.file_type();
+    if file_type.is_dir() {
+      fs::create_dir_all(&target_path)?;
+    } else if file_type.is_symlink() {
+      let link_target = fs::read_link(entry_path)?;
+      if let Some(parent) = target_path.parent() {
+        fs::create_dir_all(parent)?;
+      }
+      #[cfg(unix)]
+      std::os::unix::fs::symlink(link_target, &target_path)?;
+    } else {
+      if let Some(parent) = target_path.parent() {
+        fs::create_dir_all(parent)?;
+      }
+      fs::copy(entry_path, &target_path)?;
+    }
+  }
   Ok(())
 }
 

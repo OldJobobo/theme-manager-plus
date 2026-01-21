@@ -21,7 +21,7 @@ Commands:
 USAGE
 }
 
-VERSION="0.2.1"
+VERSION="0.2.2"
 
 theme_root_dir() {
   echo "${THEME_ROOT_DIR:-${HOME}/.config/omarchy/themes}"
@@ -56,7 +56,7 @@ starship_themes_dir() {
 }
 
 waybar_apply_mode() {
-  echo "${WAYBAR_APPLY_MODE:-exec}"
+  echo "${WAYBAR_APPLY_MODE:-symlink}"
 }
 
 skip_apps() {
@@ -399,31 +399,6 @@ apply_waybar_theme() {
 
   local apply_mode
   apply_mode="$(waybar_apply_mode)"
-  if [[ "${apply_mode}" == "exec" ]]; then
-    local restart_cmd="${WAYBAR_RESTART_CMD:-tmplus-restart-waybar}"
-    local restart_args=()
-    if [[ -n "${WAYBAR_RESTART_CMD:-}" ]]; then
-      read -r -a restart_args <<< "${WAYBAR_RESTART_CMD}"
-    else
-      restart_args=("${restart_cmd}")
-    fi
-
-    local cmd_name="${restart_args[0]}"
-    if ! command_exists "${cmd_name}"; then
-      echo "theme-manager: waybar restart helper not found: ${cmd_name}; falling back to copy mode" >&2
-      apply_mode="copy"
-    else
-      if [[ -z "${QUIET_MODE:-}" ]]; then
-        echo "theme-manager: applying waybar config via ${cmd_name}"
-      fi
-      "${restart_args[@]}" -c "${config_path}" -s "${style_path}" || true
-      return 0
-    fi
-  fi
-
-  if [[ "${apply_mode}" != "copy" ]]; then
-    return 0
-  fi
 
   local waybar_config_dir
   waybar_config_dir="$(waybar_dir)"
@@ -432,13 +407,25 @@ apply_waybar_theme() {
     echo "theme-manager: applying waybar config from ${config_path}"
     echo "theme-manager: applying waybar style from ${style_path}"
   fi
-  if ! cp -p -f "${config_path}" "${waybar_config_dir}/config.jsonc"; then
-    echo "theme-manager: failed to copy waybar config to ${waybar_config_dir}/config.jsonc" >&2
-    return 1
-  fi
-  if ! cp -p -f "${style_path}" "${waybar_config_dir}/style.css"; then
-    echo "theme-manager: failed to copy waybar style to ${waybar_config_dir}/style.css" >&2
-    return 1
+
+  if [[ "${apply_mode}" == "copy" ]]; then
+    if ! cp -p -f "${config_path}" "${waybar_config_dir}/config.jsonc"; then
+      echo "theme-manager: failed to copy waybar config to ${waybar_config_dir}/config.jsonc" >&2
+      return 1
+    fi
+    if ! cp -p -f "${style_path}" "${waybar_config_dir}/style.css"; then
+      echo "theme-manager: failed to copy waybar style to ${waybar_config_dir}/style.css" >&2
+      return 1
+    fi
+  else
+    if ! ln -sfn "${config_path}" "${waybar_config_dir}/config.jsonc"; then
+      echo "theme-manager: failed to symlink waybar config to ${waybar_config_dir}/config.jsonc" >&2
+      return 1
+    fi
+    if ! ln -sfn "${style_path}" "${waybar_config_dir}/style.css"; then
+      echo "theme-manager: failed to symlink waybar style to ${waybar_config_dir}/style.css" >&2
+      return 1
+    fi
   fi
   run_filtered omarchy-restart-waybar "waybar"
 }
