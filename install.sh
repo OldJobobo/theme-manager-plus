@@ -75,6 +75,18 @@ build_from_source() {
 
 mkdir -p "${TARGET_DIR}"
 
+ensure_path_entry() {
+  local file="$1"
+  local path_line='export PATH="$HOME/.local/bin:$PATH"'
+  if [ -f "${file}" ] && grep -q 'HOME/\.local/bin' "${file}"; then
+    return 0
+  fi
+  if [ ! -f "${file}" ]; then
+    touch "${file}"
+  fi
+  printf '\n%s\n' "${path_line}" >> "${file}"
+}
+
 os="$(uname -s)"
 arch="$(uname -m)"
 if [ "${os}" != "Linux" ] || [ "${arch}" != "x86_64" ]; then
@@ -89,3 +101,7 @@ if ! download_release; then
 fi
 
 mkdir -p "${HOME}/.config/starship-themes"
+ensure_path_entry "${HOME}/.profile"
+ensure_path_entry "${HOME}/.bashrc"
+ensure_path_entry "${HOME}/.zshrc"
+echo "theme-manager: ensured ~/.local/bin is on PATH in ~/.profile, ~/.bashrc, and ~/.zshrc"
