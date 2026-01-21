@@ -18,6 +18,9 @@
 # default_preset = ""
 # default_name = ""
 
+[tui]
+# apply_key = "ctrl+enter" # examples: "ctrl+enter", "ctrl+m", "enter"
+
 [behavior]
 # quiet_default = false
 # awww_transition = true

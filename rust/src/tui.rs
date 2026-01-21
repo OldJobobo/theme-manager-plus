@@ -634,22 +634,19 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
               }
               continue 'event_loop;
             }
-            if tab == BrowseTab::Review
-              && key.modifiers.contains(KeyModifiers::CONTROL)
-              && matches!(key.code, KeyCode::Enter | KeyCode::Char('m') | KeyCode::Char('j'))
-            {
-              let selection = BrowseSelection {
-                theme: selected_theme.clone(),
-                waybar: current_waybar_selection(&waybar_items, &waybar_state),
-                starship: current_starship_selection(
-                  &starship_items,
-                  &starship_state,
-                  &theme_path,
-                ),
-              };
-              cleanup_terminal(&mut terminal)?;
-              return Ok(Some(selection));
-            }
+          if tab == BrowseTab::Review && apply_key_matches(config, key) {
+            let selection = BrowseSelection {
+              theme: selected_theme.clone(),
+              waybar: current_waybar_selection(&waybar_items, &waybar_state),
+              starship: current_starship_selection(
+                &starship_items,
+                &starship_state,
+                &theme_path,
+              ),
+            };
+            cleanup_terminal(&mut terminal)?;
+            return Ok(Some(selection));
+          }
             if key.code == KeyCode::Enter && tab == BrowseTab::Presets {
               status_tab = tab;
               status_at = Instant::now();
@@ -2646,6 +2643,63 @@ fn parse_lines(output: &[u8]) -> Vec<String> {
 
 fn command_exists(cmd: &str) -> bool {
   which::which(cmd).is_ok()
+}
+
+fn apply_key_matches(config: &ResolvedConfig, key: event::KeyEvent) -> bool {
+  if let Some(spec) = config.tui_apply_key.as_deref() {
+    if let Some(binding) = parse_apply_key(spec) {
+      return key.code == binding.code && key.modifiers == binding.modifiers;
+    }
+  }
+
+  let default_keys = [
+    ApplyKey::new(KeyCode::Enter, KeyModifiers::CONTROL),
+    ApplyKey::new(KeyCode::Char('m'), KeyModifiers::CONTROL),
+    ApplyKey::new(KeyCode::Char('j'), KeyModifiers::CONTROL),
+  ];
+  default_keys
+    .iter()
+    .any(|binding| key.code == binding.code && key.modifiers == binding.modifiers)
+}
+
+fn parse_apply_key(spec: &str) -> Option<ApplyKey> {
+  let mut modifiers = KeyModifiers::empty();
+  let mut code: Option<KeyCode> = None;
+  for part in spec.split('+').map(|p| p.trim().to_ascii_lowercase()) {
+    if part.is_empty() {
+      continue;
+    }
+    match part.as_str() {
+      "ctrl" | "control" => modifiers |= KeyModifiers::CONTROL,
+      "alt" => modifiers |= KeyModifiers::ALT,
+      "shift" => modifiers |= KeyModifiers::SHIFT,
+      "enter" | "return" => code = Some(KeyCode::Enter),
+      "esc" | "escape" => code = Some(KeyCode::Esc),
+      "tab" => code = Some(KeyCode::Tab),
+      _ => {
+        if part.len() == 1 {
+          if let Some(ch) = part.chars().next() {
+            code = Some(KeyCode::Char(ch));
+          }
+        } else {
+          return None;
+        }
+      }
+    }
+  }
+  code.map(|code| ApplyKey { code, modifiers })
+}
+
+#[derive(Clone, Copy)]
+struct ApplyKey {
+  code: KeyCode,
+  modifiers: KeyModifiers,
+}
+
+impl ApplyKey {
+  fn new(code: KeyCode, modifiers: KeyModifiers) -> Self {
+    Self { code, modifiers }
+  }
 }
 
 fn term_contains(value: &str) -> bool {

@@ -9,6 +9,7 @@ pub struct FileConfig {
   pub paths: Option<PathsConfig>,
   pub waybar: Option<WaybarConfig>,
   pub starship: Option<StarshipConfig>,
+  pub tui: Option<TuiConfig>,
   pub behavior: Option<BehaviorConfig>,
 }
 
@@ -38,6 +39,11 @@ pub struct StarshipConfig {
   pub default_mode: Option<String>,
   pub default_preset: Option<String>,
   pub default_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct TuiConfig {
+  pub apply_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -72,6 +78,7 @@ pub struct ResolvedConfig {
   pub default_starship_mode: Option<String>,
   pub default_starship_preset: Option<String>,
   pub default_starship_name: Option<String>,
+  pub tui_apply_key: Option<String>,
   pub quiet_default: bool,
   pub awww_transition: bool,
   pub awww_transition_type: String,
@@ -128,6 +135,7 @@ impl ResolvedConfig {
       default_starship_mode: None,
       default_starship_preset: None,
       default_starship_name: None,
+      tui_apply_key: None,
       quiet_default: false,
       awww_transition: true,
       awww_transition_type: "grow".to_string(),
@@ -198,6 +206,12 @@ impl ResolvedConfig {
       }
       if let Some(val) = &starship.default_name {
         self.default_starship_name = Some(val.clone());
+      }
+    }
+
+    if let Some(tui) = &cfg.tui {
+      if let Some(val) = &tui.apply_key {
+        self.tui_apply_key = Some(val.clone());
       }
     }
 
@@ -422,6 +436,10 @@ pub fn print_config(config: &ResolvedConfig) {
   println!(
     "DEFAULT_STARSHIP_NAME={}",
     config.default_starship_name.as_deref().unwrap_or("")
+  );
+  println!(
+    "TUI_APPLY_KEY={}",
+    config.tui_apply_key.as_deref().unwrap_or("")
   );
   println!(
     "QUIET_MODE_DEFAULT={}",

@@ -80,8 +80,9 @@ Quiet mode:
 - `-q` suppresses most external output.
 
 **`browse`**  
-Pick a theme in a full‑screen tabbed picker with a Review tab for apply. If `preview.png` (case-insensitive) exists in the theme folder it will show on the right; otherwise it falls back to `theme.p[...]  
-Tabs: Theme, Waybar, Starship, Presets, Review. Apply with Ctrl+Enter. Save a preset from Review with Ctrl+S. Search field sits above each list: type to filter, `Backspace` deletes, `Ctrl+u` clears. A[...]  
+Pick a theme in a full-screen tabbed picker with a Review tab for apply. If `preview.png` (case-insensitive) exists in the theme folder it will show on the right; otherwise it falls back to `theme.png` (case-insensitive) or the first image in `backgrounds/`.
+Tabs: Theme, Waybar, Starship, Presets, Review. Apply with Ctrl+Enter by default; set `[tui] apply_key` to change it (example: `"ctrl+m"`). Ghostty users should unbind Ctrl+Enter in `~/.config/ghostty/config` or change the apply key.
+Save a preset from Review with Ctrl+S. Search field sits above each list: type to filter, `Backspace` deletes, `Ctrl+u` clears. A single-line status bar shows the current selections and shortcuts.
 
 **`next` / `current` / `bg-next`**  
 `next` switches to the next theme in sorted order.  
