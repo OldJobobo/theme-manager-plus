@@ -1,11 +1,11 @@
 # Theme Manager Plus
 
 ## Overview
-Theme Manager Plus is a TUI and CLI tool that switches Omarchy themes the same way the Omarchy menu does. It is not a replacement for Omarchy’s theming system. Think of it as a direct, expanded and customizable version of “Menu → Style → Theme → <name>”.
+Theme Manager Plus is a TUI and CLI tool that switches Omarchy themes the same way the Omarchy menu does. It is not a replacement for Omarchy's theming system. Think of it as a direct, expanded and [...]
 
 What it does:
 - Materializes `~/.config/omarchy/current/theme` and writes `theme.name` so Omarchy apps know what theme is active.
-- Runs Omarchy’s own theme scripts so apps update the same way they do from the menu.
+- Runs Omarchy's own theme scripts so apps update the same way they do from the menu.
 - Reloads the usual components (Waybar, terminals, notifications, etc.).
 - Can also apply a Waybar theme when you ask it to.
 - Can apply Starship presets or user themes,
@@ -14,7 +14,6 @@ What it does:
 ## Quick Start
 ```
 curl -fsSL https://raw.githubusercontent.com/OldJobobo/theme-manager-plus/main/install.sh | bash
-
 ```
 then
 ```
@@ -22,7 +21,7 @@ theme-manager
 ```
 or
 ```
-thene-manager list
+theme-manager list
 theme-manager set <ThemeName>
 ```
 
@@ -55,7 +54,7 @@ curl -fsSL https://raw.githubusercontent.com/OldJobobo/theme-manager-plus/main/u
 Common commands:
 - `theme-manager list` — show available themes.
 - `theme-manager set <ThemeName>` — switch to a theme.
-- `theme-manager set <ThemeName> -w` — switch and apply the theme’s Waybar theme.
+- `theme-manager set <ThemeName> -w` — switch and apply the theme's Waybar theme.
 - `theme-manager browse` — pick a theme and Waybar option in a full‑screen selector.
 - Starship presets or user themes can be applied via config defaults or `browse`.
 
@@ -78,9 +77,9 @@ Common commands:
 
 ## Command Reference (Detailed)
 **`set <ThemeName>`**  
-Switch to a theme. This materializes the current theme directory, writes `~/.config/omarchy/current/theme.name`, runs Omarchy’s theme scripts, reloads components, and triggers the Omarchy hook.  
+Switch to a theme. This materializes the current theme directory, writes `~/.config/omarchy/current/theme.name`, runs Omarchy's theme scripts, reloads components, and triggers the Omarchy hook.  
 Waybar:
-- `-w` (no name): use the theme’s `waybar-theme/` folder if it exists.
+- `-w` (no name): use the theme's `waybar-theme/` folder if it exists.
 - `-w <WaybarName>`: use `~/.config/waybar/themes/<WaybarName>/`.
 Starship:
 - Applies the configured preset or user theme when Starship defaults are set.
@@ -88,13 +87,13 @@ Quiet mode:
 - `-q` suppresses most external output.
 
 **`browse`**  
-Pick a theme in a full‑screen tabbed picker with a Review tab for apply. If `preview.png` (case-insensitive) exists in the theme folder it will show on the right; otherwise it falls back to `theme.png` (case-insensitive) or the first image in `backgrounds/`.  
-Tabs: Theme, Waybar, Starship, Presets, Review. Apply with Ctrl+Enter. Save a preset from Review with Ctrl+S. Search field sits above each list: type to filter, `Backspace` deletes, `Ctrl+u` clears. A single-line status bar shows the current selections and shortcuts.
+Pick a theme in a full‑screen tabbed picker with a Review tab for apply. If `preview.png` (case-insensitive) exists in the theme folder it will show on the right; otherwise it falls back to `theme.p[...]  
+Tabs: Theme, Waybar, Starship, Presets, Review. Apply with Ctrl+Enter. Save a preset from Review with Ctrl+S. Search field sits above each list: type to filter, `Backspace` deletes, `Ctrl+u` clears. A[...]  
 
 **`next` / `current` / `bg-next`**  
 `next` switches to the next theme in sorted order.  
 `current` prints the current theme name.  
-`bg-next` cycles the background using Omarchy’s background tool (which reads `theme.name`).
+`bg-next` cycles the background using Omarchy's background tool (which reads `theme.name`).
 
 **`install <git-url>` / `update` / `remove [theme]`**  
 `install` clones a theme into your Omarchy themes folder and activates it.  
@@ -131,7 +130,7 @@ Two ways to apply Waybar:
 - Shared: `~/.config/waybar/themes/<name>/` with the same two files.
 
 Behavior:
-- `-w` with no name uses the theme’s `waybar-theme/` if present.
+- `-w` with no name uses the theme's `waybar-theme/` if present.
 - `-w <name>` uses the shared Waybar theme.
 - Files are symlinked into `~/.config/waybar/` by default; set `WAYBAR_APPLY_MODE="copy"` to copy instead.
 - Waybar is restarted after apply.
@@ -160,7 +159,7 @@ Behavior:
 - Example themes are available in `extras/starship-themes/` (copy into `~/.config/starship-themes/`).
 
 ## Omarchy Compatibility
-This tool calls Omarchy’s scripts to stay compatible. It runs:
+This tool calls Omarchy's scripts to stay compatible. It runs:
 - `omarchy-theme-bg-next`
 - `omarchy-restart-terminal`, `omarchy-restart-waybar`, `omarchy-restart-swayosd`
 - `omarchy-theme-set-gnome`, `omarchy-theme-set-browser`, `omarchy-theme-set-vscode`, `omarchy-theme-set-obsidian`
@@ -174,7 +173,7 @@ Order of operations (simplified):
 5) Run Omarchy app-specific theme setters.
 6) Trigger the Omarchy theme hook.
 
-Note on Omarchy’s new theme format:
+Note on Omarchy's new theme format:
 - Omarchy materializes the current theme directory and can generate configs from `colors.toml` via templates.
 - Theme Manager Plus mirrors this flow and invokes `omarchy-theme-set-templates` after staging the theme.
 - Template sources come from `$OMARCHY_PATH/default/themed` and `~/.config/omarchy/themed` (user templates override defaults).
@@ -219,7 +218,7 @@ Environment flags (optional):
 Awkward but useful: set `THEME_MANAGER_AWWW_*` to override any awww transition field (see `config.toml.example`).
 
 ## Omarchy App Launcher Integration
-Theme Manager Plus integrates as a TUI app in Omarchy’s app launcher. This gives you
+Theme Manager Plus integrates as a TUI app in Omarchy's app launcher. This gives you
 a standalone, floating terminal window that runs the same `browse` flow as the CLI.
 
 Install the launcher:
@@ -227,7 +226,7 @@ Install the launcher:
 ./install-omarchy-menu.sh
 ```
 
-This uses Omarchy’s TUI installer to create:
+This uses Omarchy's TUI installer to create:
 - `~/.local/share/applications/Theme Manager+.desktop`
 
 The launcher opens a floating terminal and runs:
@@ -244,8 +243,8 @@ hyprctl reload
 ```
 
 ## Troubleshooting (Common)
-- “theme not found” → check spelling or `THEME_ROOT_DIR`.
-- “omarchy-* not found” → ensure Omarchy scripts are in PATH or set `OMARCHY_BIN_DIR`.
+- "theme not found" → check spelling or `THEME_ROOT_DIR`.
+- "omarchy-* not found" → ensure Omarchy scripts are in PATH or set `OMARCHY_BIN_DIR`.
 - No Waybar change → confirm `waybar-theme/` files or `~/.config/waybar/themes/<name>/`.
 - Browse preview missing → check `preview.png`, `theme.png`, or `backgrounds/` in the theme folder.
 - Missing themed configs (colors.toml) → ensure `omarchy-theme-set-templates` is in PATH and the template directory exists under `$OMARCHY_PATH/default/themed` or `~/.config/omarchy/themed`.
@@ -266,16 +265,16 @@ Legacy Bats tests still live under `tests/` for the Bash CLI.
 - Legacy Bats tests: `tests/`
 
 When adding new features:
-- Keep behavior compatible with Omarchy’s flow.
+- Keep behavior compatible with Omarchy's flow.
 - Prefer small, composable shell functions.
 - Add a test when behavior changes.
 
 ## FAQ
-**Why not replace Omarchy’s theming?**  
+**Why not replace Omarchy's theming?**  
 Because Omarchy already owns the theme system; this tool just drives it.
 
 **Why symlink Waybar files?**  
-Waybar themes often import `../omarchy/current/theme/waybar.css`, so symlinks preserve Omarchy’s expected path.
+Waybar themes often import `../omarchy/current/theme/waybar.css`, so symlinks preserve Omarchy's expected path.
 
 **Can I use custom theme paths?**  
 Yes, set `THEME_ROOT_DIR` in your config.
