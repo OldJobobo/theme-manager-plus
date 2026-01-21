@@ -13,7 +13,7 @@ What it does:
 
 ## Quick Start
 ```
-curl -fsSL https://raw.githubusercontent.com/OldJobobo/theme-manager-plus/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/OldJobobo/theme-manager-plus/master/install.sh | bash
 ```
 then
 ```
@@ -35,20 +35,20 @@ theme-manager set <ThemeName>
 ## Install
 Install latest (Linux x86_64):
 ```
-curl -fsSL https://raw.githubusercontent.com/OldJobobo/theme-manager-plus/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/OldJobobo/theme-manager-plus/master/install.sh | bash
 ```
 Install a specific version:
 ```
 THEME_MANAGER_VERSION=0.2.2 \
-  curl -fsSL https://raw.githubusercontent.com/OldJobobo/theme-manager-plus/main/install.sh | bash
+  curl -fsSL https://raw.githubusercontent.com/OldJobobo/theme-manager-plus/master/install.sh | bash
 ```
 Uninstall:
 ```
-curl -fsSL https://raw.githubusercontent.com/OldJobobo/theme-manager-plus/main/uninstall.sh | bash
+curl -fsSL https://raw.githubusercontent.com/OldJobobo/theme-manager-plus/master/uninstall.sh | bash
 ```
 Uninstall + remove config:
 ```
-curl -fsSL https://raw.githubusercontent.com/OldJobobo/theme-manager-plus/main/uninstall.sh | bash -s -- --purge
+curl -fsSL https://raw.githubusercontent.com/OldJobobo/theme-manager-plus/master/uninstall.sh | bash -s -- --purge
 ```
 
 Common commands:
