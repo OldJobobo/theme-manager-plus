@@ -84,6 +84,24 @@ Pick a theme in a full-screen tabbed picker with a Review tab for apply. If `pre
 Tabs: Theme, Waybar, Starship, Presets, Review. Apply with Ctrl+Enter by default; set `[tui] apply_key` to change it (example: `"ctrl+m"`). Ghostty users should unbind Ctrl+Enter in `~/.config/ghostty/config` or change the apply key.
 Save a preset from Review with Ctrl+S. Search field sits above each list: type to filter, `Backspace` deletes, `Ctrl+u` clears. A single-line status bar shows the current selections and shortcuts.
 
+Ghostty notes:
+- Change the apply key in Theme Manager+ by editing `~/.config/theme-manager/config.toml`:
+  ```
+  [tui]
+  apply_key = "ctrl+m"
+  ```
+- Or unbind Ctrl+Enter in Ghostty by editing `~/.config/ghostty/config`:
+  ```
+  keybind = ctrl+enter=unbound
+  ```
+  (Restart Ghostty after editing.)
+- If you installed from a binary release and don’t have a local repo, create the config file like this:
+  ```
+  mkdir -p ~/.config/theme-manager
+  curl -fsSL https://raw.githubusercontent.com/OldJobobo/theme-manager-plus/master/config.toml.example \
+    -o ~/.config/theme-manager/config.toml
+  ```
+
 **`next` / `current` / `bg-next`**  
 `next` switches to the next theme in sorted order.  
 `current` prints the current theme name.  
