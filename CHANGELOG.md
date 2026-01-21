@@ -3,6 +3,7 @@
 All notable changes to this project are documented in this file.
 
 ## Unreleased
+- Fixed `install.sh` to handle piped execution without `BASH_SOURCE` errors.
 
 ## 0.2.2
 - Always symlink Waybar config/style unless `WAYBAR_APPLY_MODE="copy"` is set.
