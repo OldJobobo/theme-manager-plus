@@ -8,22 +8,15 @@ What it does:
 - Runs Omarchy's own theme scripts so apps update the same way they do from the menu.
 - Reloads the usual components (Waybar, terminals, notifications, etc.).
 - Can also apply a Waybar theme when you ask it to.
-- Can apply Starship presets or user themes,
-- And save/load presets for theme/Waybar/Starship bundles.
+- Can apply Starship presets or user themes.
+- Can save/load presets for theme/Waybar/Starship bundles.
 
 ## Quick Start
 ```
 curl -fsSL https://raw.githubusercontent.com/OldJobobo/theme-manager-plus/master/install.sh | bash
-```
-then Open a New terminal and type:
-```
 theme-manager
 ```
-or
-```
-theme-manager list
-theme-manager set <ThemeName>
-```
+If the command is not found, open a new terminal or run `source ~/.profile`.
 
 ## Requirements
 - Omarchy installed on this machine.
@@ -39,7 +32,7 @@ curl -fsSL https://raw.githubusercontent.com/OldJobobo/theme-manager-plus/master
 ```
 Install a specific version:
 ```
-THEME_MANAGER_VERSION=0.2.2 \
+THEME_MANAGER_VERSION=0.2.3 \
   curl -fsSL https://raw.githubusercontent.com/OldJobobo/theme-manager-plus/master/install.sh | bash
 ```
 Uninstall:
@@ -139,7 +132,6 @@ Notes:
 - If a theme has `waybar-theme/preview.png` (or `preview.PNG`), the browse screen shows it.
 - Theme previews also fall back to `theme.png` (case-insensitive) in the theme root.
 - If there is no preview, the browser falls back to the first image in `backgrounds/`.
-- `install.sh` downloads a release binary when possible and falls back to building from source if it is run from a git checkout.
 
 ### Starship
 Theme Manager Plus can apply Starship prompt configs after a theme switch.

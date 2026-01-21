@@ -1,6 +1,6 @@
 [paths]
 # theme_root_dir = "~/.config/omarchy/themes"
-# current_theme_link = "~/.config/omarchy/current/theme" # Theme Manager+ uses a symlink by default.
+# current_theme_link = "~/.config/omarchy/current/theme" # Theme Manager+ materializes this directory.
 # current_background_link = "~/.config/omarchy/current/background"
 # omarchy_bin_dir = "~/.local/share/omarchy/bin"
 # waybar_dir = "~/.config/waybar"

@@ -107,8 +107,8 @@ pub fn cmd_set(ctx: &CommandContext<'_>, theme_name: &str) -> Result<()> {
 
   let mut waybar_restart = None;
   if !ctx.skip_apps {
-    waybar_restart = waybar::prepare_waybar(ctx, &current_theme_dir)?;
-    starship::apply_starship(ctx, &current_theme_dir)?;
+    waybar_restart = waybar::prepare_waybar(ctx, &theme_source)?;
+    starship::apply_starship(ctx, &theme_source)?;
   }
 
   if !ctx.skip_apps {
