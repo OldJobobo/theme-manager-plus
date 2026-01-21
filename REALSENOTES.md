@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.2.7
+- Added a “No theme change” option in the browse picker to apply Waybar/Starship without switching themes.
+- New `theme-manager waybar` and `theme-manager starship` commands apply just those components.
+- Broken theme symlinks now surface a clear error instead of failing later.
+
 ## 0.2.6
 - Added configurable TUI apply shortcut (`[tui] apply_key`) for terminals like Ghostty.
 
