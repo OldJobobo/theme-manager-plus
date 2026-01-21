@@ -212,7 +212,8 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
   if quiet {
     // currently unused, but reserved for future use
   }
-  let themes = theme_ops::list_theme_entries_for_config(config)?;
+  let mut themes = theme_ops::list_theme_entries_for_config(config)?;
+  themes.sort();
   if themes.is_empty() {
     return Err(anyhow!("no themes available"));
   }
@@ -299,12 +300,14 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
             &mut theme_state,
             &backend,
             |idx| {
-              let theme_path = theme_ops::resolve_theme_path(config, &theme_items[idx].value)?;
-              load_code_preview(
-                "hyprland.conf",
-                theme_path.join("hyprland.conf"),
-                "conf",
-              )
+              match theme_ops::resolve_theme_path(config, &theme_items[idx].value) {
+                Ok(theme_path) => load_code_preview(
+                  "hyprland.conf",
+                  theme_path.join("hyprland.conf"),
+                  "conf",
+                ),
+                Err(_) => Text::from("Theme preview unavailable."),
+              }
             },
             |idx| theme_items[idx].preview.clone(),
             |_idx| None,
@@ -2639,14 +2642,6 @@ fn parse_lines(output: &[u8]) -> Vec<String> {
     .filter(|line| !line.is_empty())
     .map(|line| line.to_string())
     .collect()
-}
-
-fn is_symlink(path: &Path) -> Result<bool> {
-  match fs::symlink_metadata(path) {
-    Ok(meta) => Ok(meta.file_type().is_symlink()),
-    Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(false),
-    Err(err) => Err(err.into()),
-  }
 }
 
 fn command_exists(cmd: &str) -> bool {

@@ -198,12 +198,6 @@ pub fn cmd_browse_stub(_ctx: &CommandContext<'_>) -> Result<()> {
   ))
 }
 
-fn sorted_theme_entries(theme_root: &Path) -> Result<Vec<String>> {
-  let mut entries = list_theme_entries(theme_root)?;
-  entries.sort();
-  Ok(entries)
-}
-
 pub fn list_theme_entries(theme_root: &Path) -> Result<Vec<String>> {
   if !theme_root.is_dir() {
     return Err(anyhow!(
