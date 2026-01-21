@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 0.2.5
+- Removed the `omarchy-theme-set-cursor` call (Cursor is handled by Omarchy’s VS Code setter).
+
 ## 0.2.4
 - Theme picker now shows both Omarchy default and user themes.
 

@@ -32,7 +32,7 @@ curl -fsSL https://raw.githubusercontent.com/OldJobobo/theme-manager-plus/master
 ```
 Install a specific version:
 ```
-THEME_MANAGER_VERSION=0.2.4 \
+THEME_MANAGER_VERSION=0.2.5 \
   curl -fsSL https://raw.githubusercontent.com/OldJobobo/theme-manager-plus/master/install.sh | bash
 ```
 Uninstall:

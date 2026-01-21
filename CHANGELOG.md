@@ -4,6 +4,9 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## 0.2.5
+- Dropped the call to `omarchy-theme-set-cursor` (handled by `omarchy-theme-set-vscode`).
+
 ## 0.2.4
 - Theme listing and selection now include both Omarchy default and user themes.
 
