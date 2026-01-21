@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_SOURCE="${BASH_SOURCE[0]-}"
-if [ -n "${SCRIPT_SOURCE}" ]; then
-  SCRIPT_DIR="$(cd "$(dirname "${SCRIPT_SOURCE}")" && pwd)"
+if [ "${BASH_SOURCE+set}" = "set" ] && [ -n "${BASH_SOURCE[0]}" ]; then
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 else
   SCRIPT_DIR="$(pwd)"
 fi
