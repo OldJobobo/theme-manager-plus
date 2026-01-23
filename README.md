@@ -305,27 +305,6 @@ Presets are stored in:
 
 ---
 
-## Omarchy App Launcher Integration
-
-Install launcher:
-```sh
-./install-omarchy-menu.sh
-```
-
-Creates:
-```
-~/.local/share/applications/Theme Manager+.desktop
-```
-
-Optional Hyprland bind:
-```ini
-bindd = SUPER SHIFT, R, Theme Manager+, exec, gtk-launch "Theme Manager+"
-```
-
-Reload Hyprland after saving.
-
----
-
 ## Troubleshooting
 
 - **Theme not found** → check spelling or `THEME_ROOT_DIR`
