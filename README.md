@@ -85,10 +85,282 @@ curl -fsSL https://raw.githubusercontent.com/OldJobobo/theme-manager-plus/master
 
 ---
 
+## Command Reference (Short)
+
+### `set <theme> [-w|--waybar [name]] [-q|--quiet]`
+
+Switch themes.
+
+- `-w` (no name): use the theme’s `waybar-theme/` if present
+- `-w <name>`: use `~/.config/waybar/themes/<name>/`
+- `-q`: suppress external command output
+
+---
+
+### `browse`
+
+Full-screen selector with previews.
+
+- Tabs: **Theme**, **Waybar**, **Starship**, **Presets**, **Review**
+- Apply with **Ctrl+Enter** by default
+- Includes a **“No theme change”** option
+- Supports search and preset saving
+
+---
+
+### `next` / `current` / `bg-next`
+
+- `next`: cycle to the next theme
+- `current`: print current theme name
+- `bg-next`: cycle background via Omarchy
+
+---
+
+### `install <git-url>` / `update` / `remove [theme]`
+
+- `install`: clone and activate a theme
+- `update`: pull updates for git-based themes
+- `remove`: delete a theme directory
+
+---
+
+### `preset save|load|list|remove`
+
+Presets store a **theme + Waybar + Starship** bundle.
+
+Save example:
+```sh
+theme-manager preset save "Daily Driver" \
+  --theme noir \
+  --waybar auto \
+  --starship preset:bracketed-segmented
+```
+
+Load example:
+```sh
+theme-manager preset load "Daily Driver" -w
+```
+
+**Precedence:**  
+CLI flags > preset values > config defaults
+
+---
+
+### `waybar <mode>`
+
+Apply Waybar without changing the theme.
+
+Modes:
+- `auto`
+- `none`
+- `<name>` (shared Waybar theme)
+
+---
+
+### `starship <mode>`
+
+Apply Starship without changing the theme.
+
+Modes:
+- `none`
+- `theme`
+- `preset:<name>`
+- `named:<name>`
+- `<name>` (named theme if it exists, otherwise preset)
+
+---
+
+### `print-config`
+
+Print resolved configuration values.
+
+---
+
+### `version`
+
+Print CLI version.
+
+---
+
+## Browse Mode Details
+
+### Previews
+
+- `preview.png` (preferred)
+- `theme.png`
+- First image in `backgrounds/`
+
+All checks are case-insensitive.
+
+### Keybindings
+
+- Apply: `Ctrl+Enter` (default)
+- Save preset: `Ctrl+S`
+- Clear search: `Ctrl+U`
+
+### Ghostty users
+
+Change apply key:
+```toml
+[tui]
+apply_key = "ctrl+m"
+```
+
+Or unbind in Ghostty:
+```ini
+keybind = ctrl+enter=unbound
+```
+
+Restart Ghostty after changes.
+
+---
+
+## Waybar Integration
+
+Two supported layouts:
+
+**Per-theme**
+```
+theme/
+└── waybar-theme/
+    ├── config.jsonc
+    └── style.css
+```
+
+**Shared**
+```
+~/.config/waybar/themes/<name>/
+```
+
+Behavior:
+- Files are symlinked into `~/.config/waybar/` by default
+- Set `WAYBAR_APPLY_MODE="copy"` to copy instead
+- Waybar is restarted after apply
+
+---
+
+## Starship Integration
+
+Supported sources:
+- Starship presets
+- User themes: `~/.config/starship-themes/*.toml`
+- Theme-specific: `starship.yaml`
+
+Behavior:
+- Active config is written to `~/.config/starship.toml`
+- Presets appear automatically in browse mode
+- Example themes live in `extras/starship-themes/`
+
+---
+
+## Omarchy Compatibility
+
+Theme Manager Plus **calls Omarchy’s own scripts** to stay compatible.
+
+Scripts invoked include:
+- `omarchy-theme-bg-next`
+- `omarchy-restart-terminal`
+- `omarchy-restart-waybar`
+- `omarchy-restart-swayosd`
+- `omarchy-theme-set-*`
+- `omarchy-hook theme-set`
+
+### Order of operations (simplified)
+
+1. Materialize theme and write `theme.name`
+2. Apply Waybar / Starship (if selected)
+3. Update background
+4. Reload components
+5. Run Omarchy app setters
+6. Trigger Omarchy theme hook
+
+Supports Omarchy templates via:
+- `$OMARCHY_PATH/default/themed`
+- `~/.config/omarchy/themed` (user overrides)
+
+---
+
+## Configuration
+
+Configuration precedence:
+1. CLI flags
+2. Environment variables
+3. `./.theme-manager.toml`
+4. `~/.config/theme-manager/config.toml`
+5. Defaults
+
+Example (`awww` transitions):
+```toml
+[behavior]
+awww_transition = true
+awww_transition_type = "grow"
+awww_transition_duration = 2.4
+awww_transition_fps = 60
+```
+
+Presets are stored in:
+```
+~/.config/theme-manager/presets.toml
+```
+
+---
+
+## Omarchy App Launcher Integration
+
+Install launcher:
+```sh
+./install-omarchy-menu.sh
+```
+
+Creates:
+```
+~/.local/share/applications/Theme Manager+.desktop
+```
+
+Optional Hyprland bind:
+```ini
+bindd = SUPER SHIFT, R, Theme Manager+, exec, gtk-launch "Theme Manager+"
+```
+
+Reload Hyprland after saving.
+
+---
+
+## Troubleshooting
+
+- **Theme not found** → check spelling or `THEME_ROOT_DIR`
+- **Omarchy scripts missing** → ensure they are in `PATH`
+- **Waybar not changing** → verify `waybar-theme/` contents
+- **Missing previews** → check `preview.png`, `theme.png`, or `backgrounds/`
+- **GTK / browser warnings** → usually harmless; use `-q`
+
+---
+
+## Development Notes
+
+- Rust CLI entry: `rust/src/main.rs`
+- Legacy Bash CLI: `bin/theme-manager`
+- Rust tests: `rust/tests/`
+- Bats tests: `tests/`
+
+Run tests:
+```sh
+cd rust
+cargo test
+```
+
+---
+
 ## FAQ
 
 **Why not replace Omarchy’s theming?**  
 Because Omarchy owns the system; this tool just drives it.
+
+**Why symlink Waybar files?**  
+To preserve Omarchy’s expected paths and imports.
+
+**Can I use custom theme paths?**  
+Yes—configure `THEME_ROOT_DIR`.
 
 **Does browse require fzf?**  
 No. The Rust TUI replaces it entirely.
