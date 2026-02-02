@@ -100,7 +100,7 @@ pub fn reload_components(
 ) -> Result<()> {
   run_optional("omarchy-restart-terminal", &[], quiet)?;
   restart_waybar_only(quiet, waybar_restart, waybar_restart_logs)?;
-  run_optional("omarchy-restart-swayosd", &[], quiet)?;
+  restart_swayosd(quiet)?;
   run_optional("hyprctl", &["reload"], quiet)?;
   run_optional("makoctl", &["reload"], quiet)?;
   if command_exists("pkill") {
@@ -131,6 +131,115 @@ pub fn restart_waybar_only(
   } else {
     run_optional("omarchy-restart-waybar", &[], quiet)?;
   }
+  Ok(())
+}
+
+fn pgrep_pids(name: &str) -> Option<Vec<String>> {
+  if !command_exists("pgrep") {
+    return None;
+  }
+  let output = Command::new("pgrep")
+    .args(["-x", name])
+    .output()
+    .ok()?;
+  if !output.status.success() {
+    return Some(Vec::new());
+  }
+  let stdout = String::from_utf8_lossy(&output.stdout);
+  let pids: Vec<String> = stdout
+    .split_whitespace()
+    .map(|pid| pid.to_string())
+    .collect();
+  Some(pids)
+}
+
+fn start_swayosd(quiet: bool) -> Result<()> {
+  if !command_exists("swayosd-server") {
+    return Ok(());
+  }
+
+  let use_setsid = command_exists("setsid");
+  let use_uwsm = command_exists("uwsm-app");
+
+  let mut candidates: Vec<Vec<String>> = Vec::new();
+  if use_setsid && use_uwsm {
+    candidates.push(vec![
+      "setsid".to_string(),
+      "uwsm-app".to_string(),
+      "--".to_string(),
+      "swayosd-server".to_string(),
+    ]);
+  }
+  if use_uwsm {
+    candidates.push(vec![
+      "uwsm-app".to_string(),
+      "--".to_string(),
+      "swayosd-server".to_string(),
+    ]);
+  }
+  if use_setsid {
+    candidates.push(vec![
+      "setsid".to_string(),
+      "swayosd-server".to_string(),
+    ]);
+  }
+  candidates.push(vec!["swayosd-server".to_string()]);
+
+  for parts in candidates {
+    let mut iter = parts.iter();
+    let Some(cmd) = iter.next() else { continue };
+    let mut command = Command::new(cmd);
+    command.args(iter);
+    if quiet {
+      command.stdout(Stdio::null()).stderr(Stdio::null());
+    }
+    match command.spawn() {
+      Ok(mut child) => {
+        thread::sleep(Duration::from_millis(120));
+        match child.try_wait() {
+          Ok(Some(status)) => {
+            if status.success() {
+              return Ok(());
+            }
+          }
+          Ok(None) => return Ok(()),
+          Err(_) => {}
+        }
+      }
+      Err(_) => {}
+    }
+  }
+
+  Ok(())
+}
+
+fn restart_swayosd(quiet: bool) -> Result<()> {
+  let before = pgrep_pids("swayosd-server");
+  if let Err(err) = run_optional("omarchy-restart-swayosd", &[], quiet) {
+    if !quiet {
+      eprintln!("theme-manager: swayosd restart command failed: {err}");
+    }
+  }
+  let after = pgrep_pids("swayosd-server");
+
+  if let (Some(before), Some(after)) = (&before, &after) {
+    if !before.is_empty() && before != after {
+      return Ok(());
+    }
+  }
+
+  if command_exists("pkill") {
+    let _ = run_command("pkill", &["-x", "swayosd-server"], true);
+    thread::sleep(Duration::from_millis(120));
+  }
+
+  if let Some(pids) = pgrep_pids("swayosd-server") {
+    if !pids.is_empty() {
+      return Ok(());
+    }
+  }
+
+  start_swayosd(quiet)?;
   Ok(())
 }
 

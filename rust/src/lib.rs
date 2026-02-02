@@ -90,10 +90,17 @@ pub fn run(cli: cli::Cli) -> Result<()> {
           debug_awww: cli.debug_awww,
         };
         if selection.no_theme_change {
-          let current_theme = paths::current_theme_dir(&config.current_theme_link)?;
-          let waybar_restart = waybar::prepare_waybar(&ctx, &current_theme)?;
-          omarchy::restart_waybar_only(quiet, waybar_restart, config.waybar_restart_logs)?;
-          starship::apply_starship(&ctx, &current_theme)?;
+          if !skip_apps {
+            let current_theme = paths::current_theme_dir(&config.current_theme_link)?;
+            let waybar_restart = waybar::prepare_waybar(&ctx, &current_theme)?;
+            starship::apply_starship(&ctx, &current_theme)?;
+            omarchy::reload_components(
+              quiet,
+              waybar_restart,
+              config.waybar_restart_logs,
+            )?;
+            omarchy::apply_theme_setters(quiet)?;
+          }
         } else {
           theme_ops::cmd_set(&ctx, &selection.theme)?;
         }

@@ -113,6 +113,7 @@ impl ResolvedConfig {
     let theme_root_dir = home.join(".config/omarchy/themes");
     let current_theme_link = home.join(".config/omarchy/current/theme");
     let current_background_link = home.join(".config/omarchy/current/background");
+    let default_omarchy_bin = home.join(".local/share/omarchy/bin");
     let waybar_dir = home.join(".config/waybar");
     let waybar_themes_dir = waybar_dir.join("themes");
     let starship_config = home.join(".config/starship.toml");
@@ -122,7 +123,11 @@ impl ResolvedConfig {
       theme_root_dir,
       current_theme_link,
       current_background_link,
-      omarchy_bin_dir: None,
+      omarchy_bin_dir: if default_omarchy_bin.is_dir() {
+        Some(default_omarchy_bin)
+      } else {
+        None
+      },
       waybar_dir,
       waybar_themes_dir,
       waybar_apply_mode: "symlink".to_string(),
@@ -261,6 +266,16 @@ impl ResolvedConfig {
     }
     if let Ok(val) = env::var("OMARCHY_BIN_DIR") {
       self.omarchy_bin_dir = Some(expand_path(&val, home));
+    }
+    if self.omarchy_bin_dir.is_none() {
+      if let Ok(val) = env::var("OMARCHY_PATH") {
+        if !val.trim().is_empty() {
+          let candidate = expand_path(&format!("{val}/bin"), home);
+          if candidate.is_dir() {
+            self.omarchy_bin_dir = Some(candidate);
+          }
+        }
+      }
     }
     if let Ok(val) = env::var("WAYBAR_DIR") {
       self.waybar_dir = expand_path(&val, home);
