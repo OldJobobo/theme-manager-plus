@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.2.8
+- Reapplying the current theme from the TUI now reloads the full theme stack (including swayosd).
+- Omarchy helper commands now auto-resolve from default installs or `$OMARCHY_PATH/bin`.
+- SwayOSD restarts are more reliable with PID checks and a fallback relaunch.
+
 ## 0.2.7
 - Added a “No theme change” option in the browse picker to apply Waybar/Starship without switching themes.
 - New `theme-manager waybar` and `theme-manager starship` commands apply just those components.
