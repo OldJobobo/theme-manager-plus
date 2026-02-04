@@ -343,3 +343,12 @@ Yes—configure `THEME_ROOT_DIR`.
 
 **Does browse require fzf?**  
 No. The Rust TUI replaces it entirely.
+
+---
+
+## Tested & Compatible Themes
+
+The following Omarchy themes have been tested and confirmed to work with Theme Manager Plus:
+
+- Event Horizon
+- Phosphor OS
