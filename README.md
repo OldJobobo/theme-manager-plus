@@ -85,6 +85,51 @@ curl -fsSL https://raw.githubusercontent.com/OldJobobo/theme-manager-plus/master
 
 ---
 
+## Available Themes
+
+Below is a list of custom themes available for Omarchy. Install any theme using:
+
+```sh
+theme-manager install https://github.com/OldJobobo/<theme-name>
+```
+
+### Theme List
+
+- **[Batman](https://github.com/OldJobobo/omarchy-batman-theme)** - Dark theme inspired by the Dark Knight
+- **[Caroline Skyline](https://github.com/OldJobobo/omarchy-caroline-skyline-theme)** - Urban skyline-inspired colorscheme
+- **[City 783](https://github.com/OldJobobo/omarchy-city-783-theme)** - Cyberpunk city aesthetic
+- **[Deckard](https://github.com/OldJobobo/omarchy-deckard-theme)** - Blade Runner-inspired theme
+- **[Dracula](https://github.com/OldJobobo/omarchy-dracula-theme)** - Classic Dracula color scheme
+- **[Eldritch](https://github.com/OldJobobo/omarchy-eldritch-theme)** - Lovecraftian horror-inspired dark theme
+- **[Event Horizon](https://github.com/OldJobobo/omarchy-event-horizon-theme)** - Dark space-themed colorscheme
+- **[Flat Dracula](https://github.com/OldJobobo/omarchy-flat-dracula-theme)** - Flattened variant of Dracula
+- **[Florida Man](https://github.com/OldJobobo/omarchy-florida-man-theme)** - Vibrant Florida-inspired colors
+- **[Grimdark Solarized](https://github.com/OldJobobo/omarchy-grimdark-solarized-theme)** - Dark take on Solarized
+- **[Hex](https://github.com/OldJobobo/omarchy-hex-theme)** - Hexagonal geometric theme
+- **[Hinterlands](https://github.com/OldJobobo/omarchy-hinterlands-theme)** - Nature-inspired wilderness theme
+- **[Miasma](https://github.com/OldJobobo/omarchy-miasma-theme)** - Foggy, atmospheric colorscheme
+- **[Monolith](https://github.com/OldJobobo/omarchy-monolith-theme)** - Minimalist monochrome theme
+- **[Phosphor OS](https://github.com/OldJobobo/omarchy-phosphor-os-theme)** - Retro phosphor terminal aesthetic
+- **[The Loop](https://github.com/OldJobobo/omarchy-the-loop-theme)** - Continuous loop-inspired design
+- **[Waffle Cat](https://github.com/OldJobobo/omarchy-waffle-cat-theme)** - Warm forward color scheme
+- **[X-1632](https://github.com/OldJobobo/omarchy-x-1632-theme)** - Futuristic experimental theme
+
+### Quick Install Examples
+
+```sh
+# Install Event Horizon theme
+theme-manager install https://github.com/OldJobobo/omarchy-event-horizon-theme
+
+# Install Phosphor OS theme
+theme-manager install https://github.com/OldJobobo/omarchy-phosphor-os-theme
+
+# Install and apply with Waybar
+theme-manager install https://github.com/OldJobobo/omarchy-dracula-theme
+theme-manager set Dracula -w
+```
+
+---
+
 ## Command Reference (Short)
 
 ### `set <theme> [-w|--waybar [name]] [-q|--quiet]`
