@@ -6,7 +6,7 @@ use std::process::Command;
 use crate::config::ResolvedConfig;
 use crate::omarchy;
 use crate::paths::normalize_theme_name;
-use crate::theme_ops::{self, CommandContext};
+use crate::theme_ops::{self, CommandContext, walker_from_defaults};
 
 pub struct GitContext<'a> {
   pub config: &'a ResolvedConfig,
@@ -122,6 +122,7 @@ fn resolve_entry(path: PathBuf) -> PathBuf {
 
 fn default_command_context<'a>(config: &'a ResolvedConfig) -> CommandContext<'a> {
   let (waybar_mode, waybar_name) = theme_ops::waybar_from_defaults(config);
+  let (walker_mode, walker_name) = walker_from_defaults(config);
   let starship_mode = theme_ops::starship_from_defaults(config);
   let skip_apps = std::env::var("THEME_MANAGER_SKIP_APPS").is_ok();
   let skip_hook = std::env::var("THEME_MANAGER_SKIP_HOOK").is_ok();
@@ -132,6 +133,8 @@ fn default_command_context<'a>(config: &'a ResolvedConfig) -> CommandContext<'a>
     skip_hook,
     waybar_mode,
     waybar_name,
+    walker_mode,
+    walker_name,
     starship_mode,
     debug_awww: false,
   }

@@ -12,6 +12,10 @@ pub fn find_waybar_preview(waybar_dir: &Path) -> Option<PathBuf> {
   find_first_png(waybar_dir)
 }
 
+pub fn find_walker_preview(walker_dir: &Path) -> Option<PathBuf> {
+  find_first_png(walker_dir)
+}
+
 fn find_named_file(dir: &Path, name: &str) -> Option<PathBuf> {
   if !dir.is_dir() {
     return None;

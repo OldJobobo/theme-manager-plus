@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 pub struct FileConfig {
   pub paths: Option<PathsConfig>,
   pub waybar: Option<WaybarConfig>,
+  pub walker: Option<WalkerConfig>,
   pub starship: Option<StarshipConfig>,
   pub tui: Option<TuiConfig>,
   pub behavior: Option<BehaviorConfig>,
@@ -21,6 +22,8 @@ pub struct PathsConfig {
   pub omarchy_bin_dir: Option<String>,
   pub waybar_dir: Option<String>,
   pub waybar_themes_dir: Option<String>,
+  pub walker_dir: Option<String>,
+  pub walker_themes_dir: Option<String>,
   pub starship_config: Option<String>,
   pub starship_themes_dir: Option<String>,
 }
@@ -30,6 +33,13 @@ pub struct WaybarConfig {
   pub apply_mode: Option<String>,
   pub restart_cmd: Option<String>,
   pub restart_logs: Option<bool>,
+  pub default_mode: Option<String>,
+  pub default_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct WalkerConfig {
+  pub apply_mode: Option<String>,
   pub default_mode: Option<String>,
   pub default_name: Option<String>,
 }
@@ -73,6 +83,11 @@ pub struct ResolvedConfig {
   pub waybar_restart_logs: bool,
   pub default_waybar_mode: Option<String>,
   pub default_waybar_name: Option<String>,
+  pub walker_dir: PathBuf,
+  pub walker_themes_dir: PathBuf,
+  pub walker_apply_mode: String,
+  pub default_walker_mode: Option<String>,
+  pub default_walker_name: Option<String>,
   pub starship_config: PathBuf,
   pub starship_themes_dir: PathBuf,
   pub default_starship_mode: Option<String>,
@@ -116,6 +131,8 @@ impl ResolvedConfig {
     let default_omarchy_bin = home.join(".local/share/omarchy/bin");
     let waybar_dir = home.join(".config/waybar");
     let waybar_themes_dir = waybar_dir.join("themes");
+    let walker_dir = home.join(".config/walker");
+    let walker_themes_dir = walker_dir.join("themes");
     let starship_config = home.join(".config/starship.toml");
     let starship_themes_dir = home.join(".config/starship-themes");
 
@@ -135,6 +152,11 @@ impl ResolvedConfig {
       waybar_restart_logs: false,
       default_waybar_mode: None,
       default_waybar_name: None,
+      walker_dir,
+      walker_themes_dir,
+      walker_apply_mode: "symlink".to_string(),
+      default_walker_mode: None,
+      default_walker_name: None,
       starship_config,
       starship_themes_dir,
       default_starship_mode: None,
@@ -176,6 +198,14 @@ impl ResolvedConfig {
       } else {
         self.waybar_themes_dir = self.waybar_dir.join("themes");
       }
+      if let Some(val) = &paths.walker_dir {
+        self.walker_dir = expand_path(val, home);
+      }
+      if let Some(val) = &paths.walker_themes_dir {
+        self.walker_themes_dir = expand_path(val, home);
+      } else {
+        self.walker_themes_dir = self.walker_dir.join("themes");
+      }
       if let Some(val) = &paths.starship_config {
         self.starship_config = expand_path(val, home);
       }
@@ -211,6 +241,18 @@ impl ResolvedConfig {
       }
       if let Some(val) = &starship.default_name {
         self.default_starship_name = Some(val.clone());
+      }
+    }
+
+    if let Some(walker) = &cfg.walker {
+      if let Some(val) = &walker.apply_mode {
+        self.walker_apply_mode = val.clone();
+      }
+      if let Some(val) = &walker.default_mode {
+        self.default_walker_mode = Some(val.clone());
+      }
+      if let Some(val) = &walker.default_name {
+        self.default_walker_name = Some(val.clone());
       }
     }
 
@@ -282,6 +324,21 @@ impl ResolvedConfig {
     }
     if let Ok(val) = env::var("WAYBAR_THEMES_DIR") {
       self.waybar_themes_dir = expand_path(&val, home);
+    }
+    if let Ok(val) = env::var("WALKER_DIR") {
+      self.walker_dir = expand_path(&val, home);
+    }
+    if let Ok(val) = env::var("WALKER_THEMES_DIR") {
+      self.walker_themes_dir = expand_path(&val, home);
+    }
+    if let Ok(val) = env::var("WALKER_APPLY_MODE") {
+      self.walker_apply_mode = val;
+    }
+    if let Ok(val) = env::var("DEFAULT_WALKER_MODE") {
+      self.default_walker_mode = Some(val);
+    }
+    if let Ok(val) = env::var("DEFAULT_WALKER_NAME") {
+      self.default_walker_name = Some(val);
     }
     if let Ok(val) = env::var("WAYBAR_APPLY_MODE") {
       self.waybar_apply_mode = val;
@@ -423,6 +480,20 @@ pub fn print_config(config: &ResolvedConfig) {
   println!(
     "WAYBAR_RESTART_LOGS={}",
     if config.waybar_restart_logs { "1" } else { "" }
+  );
+  println!("WALKER_DIR={}", config.walker_dir.to_string_lossy());
+  println!(
+    "WALKER_THEMES_DIR={}",
+    config.walker_themes_dir.to_string_lossy()
+  );
+  println!("WALKER_APPLY_MODE={}", config.walker_apply_mode);
+  println!(
+    "DEFAULT_WALKER_MODE={}",
+    config.default_walker_mode.as_deref().unwrap_or("")
+  );
+  println!(
+    "DEFAULT_WALKER_NAME={}",
+    config.default_walker_name.as_deref().unwrap_or("")
   );
   println!(
     "STARSHIP_CONFIG={}",
