@@ -18,11 +18,18 @@ pub struct PresetFile {
 pub struct PresetEntry {
   pub theme: Option<String>,
   pub waybar: Option<PresetWaybarEntry>,
+  pub walker: Option<PresetWalkerEntry>,
   pub starship: Option<PresetStarshipEntry>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PresetWaybarEntry {
+  pub mode: Option<String>,
+  pub name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PresetWalkerEntry {
   pub mode: Option<String>,
   pub name: Option<String>,
 }
@@ -42,6 +49,13 @@ pub enum PresetWaybarValue {
 }
 
 #[derive(Debug, Clone)]
+pub enum PresetWalkerValue {
+  None,
+  Auto,
+  Named(String),
+}
+
+#[derive(Debug, Clone)]
 pub enum PresetStarshipValue {
   None,
   Preset(String),
@@ -54,6 +68,7 @@ pub struct PresetDefinition {
   pub name: String,
   pub theme: String,
   pub waybar: PresetWaybarValue,
+  pub walker: PresetWalkerValue,
   pub starship: PresetStarshipValue,
 }
 
@@ -61,6 +76,7 @@ pub struct PresetDefinition {
 pub struct PresetSummary {
   pub theme: String,
   pub waybar: String,
+  pub walker: String,
   pub starship: String,
   pub errors: Vec<String>,
 }
@@ -134,6 +150,7 @@ pub fn summarize_preset(
   }
 
   let waybar_value = parse_waybar(entry.waybar.as_ref(), &mut errors);
+  let walker_value = parse_walker(entry.walker.as_ref(), &mut errors);
   let starship_value = parse_starship(entry.starship.as_ref(), &mut errors);
 
   if let Some(theme_name) = theme.as_ref() {
@@ -153,6 +170,7 @@ pub fn summarize_preset(
   PresetSummary {
     theme: theme_label,
     waybar: format_waybar(&waybar_value),
+    walker: format_walker(&walker_value),
     starship: format_starship(&starship_value),
     errors,
   }
@@ -176,6 +194,7 @@ pub fn load_preset_definition(config: &ResolvedConfig, name: &str) -> Result<Pre
     name: name.trim().to_string(),
     theme: theme.clone(),
     waybar: parse_waybar(entry.waybar.as_ref(), &mut Vec::new()),
+    walker: parse_walker(entry.walker.as_ref(), &mut Vec::new()),
     starship: parse_starship(entry.starship.as_ref(), &mut Vec::new()),
   })
 }
@@ -279,6 +298,36 @@ fn format_waybar(value: &PresetWaybarValue) -> String {
     PresetWaybarValue::None => "none".to_string(),
     PresetWaybarValue::Auto => "auto".to_string(),
     PresetWaybarValue::Named(name) => format!("named ({name})"),
+  }
+}
+
+fn format_walker(value: &PresetWalkerValue) -> String {
+  match value {
+    PresetWalkerValue::None => "none".to_string(),
+    PresetWalkerValue::Auto => "auto".to_string(),
+    PresetWalkerValue::Named(name) => format!("named ({name})"),
+  }
+}
+
+fn parse_walker(entry: Option<&PresetWalkerEntry>, errors: &mut Vec<String>) -> PresetWalkerValue {
+  let mode = entry
+    .and_then(|val| val.mode.as_deref())
+    .unwrap_or("none")
+    .trim();
+  match mode {
+    "" | "none" => PresetWalkerValue::None,
+    "auto" => PresetWalkerValue::Auto,
+    "named" => match entry.and_then(|val| val.name.clone()) {
+      Some(name) if !name.trim().is_empty() => PresetWalkerValue::Named(name),
+      _ => {
+        errors.push("walker.mode = named requires walker.name".to_string());
+        PresetWalkerValue::None
+      }
+    },
+    _ => {
+      errors.push(format!("invalid walker.mode: {mode}"));
+      PresetWalkerValue::None
+    }
   }
 }
 
