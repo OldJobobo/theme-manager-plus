@@ -1,7 +1,11 @@
 use clap::{Parser, Subcommand};
 
 #[derive(Parser, Debug)]
-#[command(name = "theme-manager", version, about = "Theme Manager Plus (Rust)")]
+#[command(
+  name = "theme-manager",
+  version = env!("THEME_MANAGER_VERSION"),
+  about = "Theme Manager Plus (Rust)"
+)]
 pub struct Cli {
   #[command(subcommand)]
   pub command: Option<Command>,
@@ -25,6 +29,7 @@ pub enum Command {
   Preset(PresetArgs),
   Waybar(WaybarArgs),
   Walker(WalkerArgs),
+  Hyprlock(HyprlockArgs),
   Starship(StarshipArgs),
 }
 
@@ -33,6 +38,10 @@ pub struct SetArgs {
   pub theme: String,
   #[arg(short = 'w', long = "waybar", num_args = 0..=1, value_name = "NAME")]
   pub waybar: Option<Option<String>>,
+  #[arg(short = 'k', long = "walker", num_args = 0..=1, value_name = "NAME")]
+  pub walker: Option<Option<String>>,
+  #[arg(long = "hyprlock", num_args = 0..=1, value_name = "NAME")]
+  pub hyprlock: Option<Option<String>>,
   #[arg(short = 'q', long = "quiet")]
   pub quiet: bool,
 }
@@ -41,6 +50,10 @@ pub struct SetArgs {
 pub struct NextArgs {
   #[arg(short = 'w', long = "waybar", num_args = 0..=1, value_name = "NAME")]
   pub waybar: Option<Option<String>>,
+  #[arg(short = 'k', long = "walker", num_args = 0..=1, value_name = "NAME")]
+  pub walker: Option<Option<String>>,
+  #[arg(long = "hyprlock", num_args = 0..=1, value_name = "NAME")]
+  pub hyprlock: Option<Option<String>>,
   #[arg(short = 'q', long = "quiet")]
   pub quiet: bool,
 }
@@ -84,6 +97,10 @@ pub struct PresetSaveArgs {
   #[arg(long, value_name = "MODE|NAME")]
   pub waybar: Option<String>,
   #[arg(long, value_name = "MODE|NAME")]
+  pub walker: Option<String>,
+  #[arg(long, value_name = "MODE|NAME")]
+  pub hyprlock: Option<String>,
+  #[arg(long, value_name = "MODE|NAME")]
   pub starship: Option<String>,
 }
 
@@ -92,6 +109,10 @@ pub struct PresetLoadArgs {
   pub name: String,
   #[arg(short = 'w', long = "waybar", num_args = 0..=1, value_name = "NAME")]
   pub waybar: Option<Option<String>>,
+  #[arg(short = 'k', long = "walker", num_args = 0..=1, value_name = "NAME")]
+  pub walker: Option<Option<String>>,
+  #[arg(long = "hyprlock", num_args = 0..=1, value_name = "NAME")]
+  pub hyprlock: Option<Option<String>>,
   #[arg(short = 'q', long = "quiet")]
   pub quiet: bool,
 }
@@ -110,6 +131,13 @@ pub struct WaybarArgs {
 
 #[derive(Parser, Debug)]
 pub struct WalkerArgs {
+  pub mode: String,
+  #[arg(short = 'q', long = "quiet")]
+  pub quiet: bool,
+}
+
+#[derive(Parser, Debug)]
+pub struct HyprlockArgs {
   pub mode: String,
   #[arg(short = 'q', long = "quiet")]
   pub quiet: bool,
