@@ -1057,7 +1057,7 @@ fn build_starship_items(config: &ResolvedConfig, theme_path: &Path) -> Result<Ve
     None,
   ));
 
-  if theme_path.join("starship.yaml").is_file() {
+  if theme_path.join("starship.toml").is_file() {
     items.push(OptionItem::with_kind(
       "Use theme starship".to_string(),
       "theme".to_string(),
@@ -1135,8 +1135,8 @@ fn build_starship_code_preview(
     "default" => Text::from("No Starship config change."),
     "none" => Text::from("No Starship config change."),
     "theme" => load_code_preview(
-      "starship.yaml",
-      theme_path.join("starship.yaml"),
+      "starship.toml",
+      theme_path.join("starship.toml"),
       "yaml",
     ),
     "preset" => {
@@ -1258,7 +1258,7 @@ fn render_starship_prompt_preview(
 
   let config_path = match item.kind.as_str() {
     "theme" => {
-      let path = theme_path.join("starship.yaml");
+      let path = theme_path.join("starship.toml");
       if !path.is_file() {
         return Text::from("Theme-specific Starship config not found.");
       }
@@ -2263,7 +2263,7 @@ fn current_starship_selection(
   match items[index].kind.as_str() {
     "default" => StarshipSelection::UseDefaults,
     "none" => StarshipSelection::None,
-    "theme" => StarshipSelection::Theme(theme_path.join("starship.yaml")),
+    "theme" => StarshipSelection::Theme(theme_path.join("starship.toml")),
     "preset" => StarshipSelection::Preset(items[index].value.clone()),
     _ => StarshipSelection::Named(items[index].value.clone()),
   }

@@ -143,9 +143,9 @@ pub fn summarize_preset(
       errors.push(format!("theme not found: {normalized}"));
     }
     if matches!(starship_value, PresetStarshipValue::Theme) {
-      let starship_path = theme_path.join("starship.yaml");
+      let starship_path = theme_path.join("starship.toml");
       if !starship_path.is_file() {
-        errors.push("theme starship.yaml not found".to_string());
+        errors.push("theme starship.toml not found".to_string());
       }
     }
   }

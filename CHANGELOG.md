@@ -4,6 +4,9 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## 0.2.9
+- Theme-specific Starship configs now use `starship.toml` instead of `starship.yaml`.
+
 ## 0.2.8
 - Applying the current theme from the TUI now reloads the full theme stack (including swayosd and theme setters).
 - Auto-detect Omarchy’s bin directory (default path or `$OMARCHY_PATH/bin`) to ensure helper commands resolve.
@@ -67,7 +70,7 @@ All notable changes to this project are documented in this file.
 - Improved README flow and Starship documentation details.
 - Added bundled Starship theme examples under `extras/starship-themes/`.
 - Added `extras/omarchy/tmplus-restart-waybar` helper for restarting Waybar with custom config/style paths.
-- Added support for theme-specific `starship.yaml` files in the Starship picker.
+- Added support for theme-specific `starship.toml` files in the Starship picker.
 - Added configurable Waybar apply mode with optional exec restart support.
 - Switched default Waybar apply mode to exec.
 - Fixed kitty terminal image previews stuck on "Loading..." by adding newline padding and combining clear+display commands.

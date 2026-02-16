@@ -23,7 +23,7 @@ Commands:
 USAGE
 }
 
-VERSION="0.2.8"
+VERSION="0.2.9"
 
 theme_root_dir() {
   echo "${THEME_ROOT_DIR:-${HOME}/.config/omarchy/themes}"
@@ -570,7 +570,7 @@ apply_starship() {
       if [[ -z "${theme_path}" ]]; then
         local current_dir
         current_dir="$(current_theme_dir 2>/dev/null || true)"
-        theme_path="${current_dir}/starship.yaml"
+        theme_path="${current_dir}/starship.toml"
       fi
       if [[ -z "${theme_path}" || ! -f "${theme_path}" ]]; then
         echo "theme-manager: starship theme file not found: ${theme_path}" >&2
@@ -1130,7 +1130,7 @@ PREVIEW_CMD
   STARSHIP_OPTIONS=()
   add_unique_starship_option "Omarchy default"
 
-  if [[ -f "${theme_path}/starship.yaml" ]]; then
+  if [[ -f "${theme_path}/starship.toml" ]]; then
     add_unique_starship_option "Use theme starship"
   fi
 
@@ -1169,7 +1169,7 @@ if [ "$choice" = "Omarchy default" ]; then
 fi
 
 if [ "$choice" = "Use theme starship" ]; then
-  config_path="${theme_path}/starship.yaml"
+  config_path="${theme_path}/starship.toml"
   if [ ! -f "$config_path" ]; then
     echo "Theme-specific Starship config not found"
     exit 0
@@ -1251,7 +1251,7 @@ PREVIEW_SCRIPT
         STARSHIP_MODE="theme"
         STARSHIP_PRESET=""
         STARSHIP_NAME=""
-        STARSHIP_THEME_PATH="${theme_path}/starship.yaml"
+        STARSHIP_THEME_PATH="${theme_path}/starship.toml"
         ;;
       "Preset: "*)
         STARSHIP_MODE="preset"

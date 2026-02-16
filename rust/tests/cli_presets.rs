@@ -94,7 +94,7 @@ starship.mode = "theme"
   cmd
     .assert()
     .failure()
-    .stderr(predicates::str::contains("starship.yaml"));
+    .stderr(predicates::str::contains("starship.toml"));
 }
 
 #[test]

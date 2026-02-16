@@ -244,7 +244,7 @@ Behavior:
 Supported sources:
 - Starship presets
 - User themes: `~/.config/starship-themes/*.toml`
-- Theme-specific: `starship.yaml`
+- Theme-specific: `starship.toml`
 
 Behavior:
 - Active config is written to `~/.config/starship.toml`

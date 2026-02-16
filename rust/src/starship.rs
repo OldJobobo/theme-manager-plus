@@ -23,7 +23,7 @@ pub fn apply_starship(ctx: &CommandContext<'_>, theme_dir: &Path) -> Result<()> 
     StarshipMode::Theme { path } => {
       let theme_path = match path {
         Some(path) => path.clone(),
-        None => theme_dir.join("starship.yaml"),
+        None => theme_dir.join("starship.toml"),
       };
       copy_theme(ctx, config_path, &theme_path)
     }

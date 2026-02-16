@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 0.2.9
+- Theme-specific Starship configs now look for `starship.toml` (instead of `starship.yaml`).
+
 ## 0.2.8
 - Reapplying the current theme from the TUI now reloads the full theme stack (including swayosd).
 - Omarchy helper commands now auto-resolve from default installs or `$OMARCHY_PATH/bin`.
@@ -43,7 +46,7 @@ Highlights
 
 Details
 - Waybar exec restart built into the Rust binary, with automatic fallback to symlink mode when needed.
-- Starship supports presets, named themes, and theme-provided configs (`starship.yaml`).
+- Starship supports presets, named themes, and theme-provided configs (`starship.toml`).
 - Awww-powered background transitions with additional transition options (used only when `awww` and its daemon are available; not auto-started).
 
 ## 0.1.9
