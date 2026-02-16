@@ -5,10 +5,17 @@
 # omarchy_bin_dir = "~/.local/share/omarchy/bin"
 # waybar_dir = "~/.config/waybar"
 # waybar_themes_dir = "~/.config/waybar/themes"
+# walker_dir = "~/.config/walker"
+# walker_themes_dir = "~/.config/walker/themes"
 # starship_config = "~/.config/starship.toml"
 # starship_themes_dir = "~/.config/starship-themes"
 
 [waybar]
+# apply_mode = "symlink" # symlink|copy
+# default_mode = "auto" # auto|named|"" (empty = none)
+# default_name = ""
+
+[walker]
 # apply_mode = "symlink" # symlink|copy
 # default_mode = "auto" # auto|named|"" (empty = none)
 # default_name = ""

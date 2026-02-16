@@ -12,10 +12,18 @@ use crate::paths::{
   title_case_theme,
 };
 use crate::starship;
+use crate::walker;
 use crate::waybar;
 
 #[derive(Debug, Clone)]
 pub enum WaybarMode {
+  None,
+  Auto,
+  Named,
+}
+
+#[derive(Debug, Clone)]
+pub enum WalkerMode {
   None,
   Auto,
   Named,
@@ -36,6 +44,8 @@ pub struct CommandContext<'a> {
   pub skip_hook: bool,
   pub waybar_mode: WaybarMode,
   pub waybar_name: Option<String>,
+  pub walker_mode: WalkerMode,
+  pub walker_name: Option<String>,
   pub starship_mode: StarshipMode,
   pub debug_awww: bool,
 }
@@ -45,6 +55,14 @@ pub fn waybar_from_defaults(config: &ResolvedConfig) -> (WaybarMode, Option<Stri
     Some("auto") => (WaybarMode::Auto, None),
     Some("named") => (WaybarMode::Named, config.default_waybar_name.clone()),
     _ => (WaybarMode::None, None),
+  }
+}
+
+pub fn walker_from_defaults(config: &ResolvedConfig) -> (WalkerMode, Option<String>) {
+  match config.default_walker_mode.as_deref() {
+    Some("auto") => (WalkerMode::Auto, None),
+    Some("named") => (WalkerMode::Named, config.default_walker_name.clone()),
+    _ => (WalkerMode::None, None),
   }
 }
 
@@ -110,6 +128,7 @@ pub fn cmd_set(ctx: &CommandContext<'_>, theme_name: &str) -> Result<()> {
   let mut waybar_restart = None;
   if !ctx.skip_apps {
     waybar_restart = waybar::prepare_waybar(ctx, &theme_source)?;
+    walker::prepare_walker(ctx, &theme_source)?;
     starship::apply_starship(ctx, &theme_source)?;
   }
 
@@ -173,6 +192,8 @@ pub fn cmd_bg_next(config: &ResolvedConfig, debug_awww: bool) -> Result<()> {
     skip_hook: false,
     waybar_mode: WaybarMode::None,
     waybar_name: None,
+    walker_mode: WalkerMode::None,
+    walker_name: None,
     starship_mode: StarshipMode::None,
     debug_awww,
   };

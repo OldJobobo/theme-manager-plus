@@ -11,11 +11,12 @@ pub mod preview;
 pub mod starship;
 pub mod theme_ops;
 pub mod tui;
+pub mod walker;
 pub mod waybar;
 
 use cli::{Command, PresetCommand};
 use config::ResolvedConfig;
-use theme_ops::{starship_from_defaults, waybar_from_defaults, StarshipMode, WaybarMode};
+use theme_ops::{starship_from_defaults, waybar_from_defaults, walker_from_defaults, StarshipMode, WaybarMode, WalkerMode};
 
 pub fn run(cli: cli::Cli) -> Result<()> {
   let config = ResolvedConfig::load()?;
@@ -33,6 +34,7 @@ pub fn run(cli: cli::Cli) -> Result<()> {
     }
     Command::Set(args) => {
       let (waybar_mode, waybar_name) = parse_waybar(&config, args.waybar)?;
+      let (walker_mode, walker_name) = walker_from_defaults(&config);
       let starship_mode = starship_from_defaults(&config);
       let quiet = args.quiet || config.quiet_default;
       let ctx = theme_ops::CommandContext {
@@ -42,6 +44,8 @@ pub fn run(cli: cli::Cli) -> Result<()> {
         skip_hook,
         waybar_mode,
         waybar_name,
+        walker_mode,
+        walker_name,
         starship_mode,
         debug_awww: cli.debug_awww,
       };
@@ -49,6 +53,7 @@ pub fn run(cli: cli::Cli) -> Result<()> {
     }
     Command::Next(args) => {
       let (waybar_mode, waybar_name) = parse_waybar(&config, args.waybar)?;
+      let (walker_mode, walker_name) = walker_from_defaults(&config);
       let starship_mode = starship_from_defaults(&config);
       let quiet = args.quiet || config.quiet_default;
       let ctx = theme_ops::CommandContext {
@@ -58,6 +63,8 @@ pub fn run(cli: cli::Cli) -> Result<()> {
         skip_hook,
         waybar_mode,
         waybar_name,
+        walker_mode,
+        walker_name,
         starship_mode,
         debug_awww: cli.debug_awww,
       };
@@ -71,6 +78,12 @@ pub fn run(cli: cli::Cli) -> Result<()> {
           tui::WaybarSelection::None => (WaybarMode::None, None),
           tui::WaybarSelection::Auto => (WaybarMode::Auto, None),
           tui::WaybarSelection::Named(name) => (WaybarMode::Named, Some(name)),
+        };
+        let (walker_mode, walker_name) = match selection.walker {
+          tui::WalkerSelection::UseDefaults => walker_from_defaults(&config),
+          tui::WalkerSelection::None => (WalkerMode::None, None),
+          tui::WalkerSelection::Auto => (WalkerMode::Auto, None),
+          tui::WalkerSelection::Named(name) => (WalkerMode::Named, Some(name)),
         };
         let starship_mode = match selection.starship {
           tui::StarshipSelection::UseDefaults => starship_from_defaults(&config),
@@ -86,6 +99,8 @@ pub fn run(cli: cli::Cli) -> Result<()> {
           skip_hook,
           waybar_mode,
           waybar_name,
+          walker_mode,
+          walker_name,
           starship_mode,
           debug_awww: cli.debug_awww,
         };
@@ -93,6 +108,7 @@ pub fn run(cli: cli::Cli) -> Result<()> {
           if !skip_apps {
             let current_theme = paths::current_theme_dir(&config.current_theme_link)?;
             let waybar_restart = waybar::prepare_waybar(&ctx, &current_theme)?;
+            walker::prepare_walker(&ctx, &current_theme)?;
             starship::apply_starship(&ctx, &current_theme)?;
             omarchy::reload_components(
               quiet,
@@ -153,6 +169,8 @@ pub fn run(cli: cli::Cli) -> Result<()> {
 
         let starship_mode = preset_starship(&preset);
 
+        let (walker_mode, walker_name) = preset_walker(&preset);
+
         let ctx = theme_ops::CommandContext {
           config: &config,
           quiet,
@@ -160,6 +178,8 @@ pub fn run(cli: cli::Cli) -> Result<()> {
           skip_hook,
           waybar_mode,
           waybar_name,
+          walker_mode,
+          walker_name,
           starship_mode,
           debug_awww: cli.debug_awww,
         };
@@ -183,6 +203,16 @@ pub fn run(cli: cli::Cli) -> Result<()> {
       };
       let quiet = args.quiet || config.quiet_default;
       apply_waybar_only(&config, waybar_mode, waybar_name, quiet, skip_apps, cli.debug_awww)?;
+    }
+    Command::Walker(args) => {
+      let mode = parse_walker_spec(&args.mode)?;
+      let (walker_mode, walker_name) = match mode {
+        presets::PresetWalkerValue::None => (WalkerMode::None, None),
+        presets::PresetWalkerValue::Auto => (WalkerMode::Auto, None),
+        presets::PresetWalkerValue::Named(name) => (WalkerMode::Named, Some(name)),
+      };
+      let quiet = args.quiet || config.quiet_default;
+      apply_walker_only(&config, walker_mode, walker_name, quiet, skip_apps, cli.debug_awww)?;
     }
     Command::Starship(args) => {
       let mode = parse_starship_spec(&args.mode, &config)?;
@@ -227,6 +257,14 @@ fn preset_waybar(preset: &presets::PresetDefinition) -> (WaybarMode, Option<Stri
   }
 }
 
+fn preset_walker(preset: &presets::PresetDefinition) -> (WalkerMode, Option<String>) {
+  match &preset.walker {
+    presets::PresetWalkerValue::None => (WalkerMode::None, None),
+    presets::PresetWalkerValue::Auto => (WalkerMode::Auto, None),
+    presets::PresetWalkerValue::Named(name) => (WalkerMode::Named, Some(name.clone())),
+  }
+}
+
 fn preset_starship(preset: &presets::PresetDefinition) -> StarshipMode {
   match &preset.starship {
     presets::PresetStarshipValue::None => StarshipMode::None,
@@ -260,6 +298,8 @@ fn build_preset_entry(
     None => preset_waybar_defaults(config),
   };
 
+  let walker_value = preset_walker_defaults(config);
+
   let starship_value = match args.starship.as_deref() {
     Some(spec) => parse_starship_spec(spec, config)?,
     None => preset_starship_defaults(config),
@@ -275,6 +315,21 @@ fn build_preset_entry(
       name: None,
     },
     presets::PresetWaybarValue::Named(name) => presets::PresetWaybarEntry {
+      mode: Some("named".to_string()),
+      name: Some(name),
+    },
+  };
+
+  let walker = match walker_value {
+    presets::PresetWalkerValue::None => presets::PresetWalkerEntry {
+      mode: Some("none".to_string()),
+      name: None,
+    },
+    presets::PresetWalkerValue::Auto => presets::PresetWalkerEntry {
+      mode: Some("auto".to_string()),
+      name: None,
+    },
+    presets::PresetWalkerValue::Named(name) => presets::PresetWalkerEntry {
       mode: Some("named".to_string()),
       name: Some(name),
     },
@@ -306,6 +361,7 @@ fn build_preset_entry(
   Ok(presets::PresetEntry {
     theme: Some(theme),
     waybar: Some(waybar),
+    walker: Some(walker),
     starship: Some(starship),
   })
 }
@@ -315,6 +371,14 @@ fn preset_waybar_defaults(config: &ResolvedConfig) -> presets::PresetWaybarValue
     (WaybarMode::Auto, _) => presets::PresetWaybarValue::Auto,
     (WaybarMode::Named, Some(name)) => presets::PresetWaybarValue::Named(name),
     _ => presets::PresetWaybarValue::None,
+  }
+}
+
+fn preset_walker_defaults(config: &ResolvedConfig) -> presets::PresetWalkerValue {
+  match walker_from_defaults(config) {
+    (WalkerMode::Auto, _) => presets::PresetWalkerValue::Auto,
+    (WalkerMode::Named, Some(name)) => presets::PresetWalkerValue::Named(name),
+    _ => presets::PresetWalkerValue::None,
   }
 }
 
@@ -394,12 +458,54 @@ fn apply_waybar_only(
     skip_hook: true,
     waybar_mode,
     waybar_name,
+    walker_mode: WalkerMode::None,
+    walker_name: None,
     starship_mode: StarshipMode::None,
     debug_awww,
   };
   let restart = waybar::prepare_waybar(&ctx, &theme_dir)?;
   omarchy::restart_waybar_only(quiet, restart, config.waybar_restart_logs)?;
   Ok(())
+}
+
+fn apply_walker_only(
+  config: &ResolvedConfig,
+  walker_mode: WalkerMode,
+  walker_name: Option<String>,
+  quiet: bool,
+  skip_apps: bool,
+  debug_awww: bool,
+) -> Result<()> {
+  if skip_apps {
+    return Ok(());
+  }
+  let theme_dir = paths::current_theme_dir(&config.current_theme_link)?;
+  let ctx = theme_ops::CommandContext {
+    config,
+    quiet,
+    skip_apps,
+    skip_hook: true,
+    waybar_mode: WaybarMode::None,
+    waybar_name: None,
+    walker_mode,
+    walker_name,
+    starship_mode: StarshipMode::None,
+    debug_awww,
+  };
+  walker::prepare_walker(&ctx, &theme_dir)?;
+  Ok(())
+}
+
+fn parse_walker_spec(spec: &str) -> Result<presets::PresetWalkerValue> {
+  let cleaned = spec.trim();
+  if cleaned.is_empty() {
+    return Err(anyhow!("--walker requires a value"));
+  }
+  match cleaned {
+    "none" => Ok(presets::PresetWalkerValue::None),
+    "auto" => Ok(presets::PresetWalkerValue::Auto),
+    _ => Ok(presets::PresetWalkerValue::Named(cleaned.to_string())),
+  }
 }
 
 fn apply_starship_only(
@@ -420,6 +526,8 @@ fn apply_starship_only(
     skip_hook: true,
     waybar_mode: WaybarMode::None,
     waybar_name: None,
+    walker_mode: WalkerMode::None,
+    walker_name: None,
     starship_mode,
     debug_awww,
   };
