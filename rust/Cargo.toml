@@ -1,9 +1,10 @@
 [package]
 name = "theme-manager-plus"
-version = "0.2.8"
+version = "0.2.9"
 edition = "2021"
 description = "Rust rewrite of Theme Manager Plus (scaffolding)"
 license = "MIT"
+build = "build.rs"
 
 [[bin]]
 name = "theme-manager"
