@@ -4,6 +4,36 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Hardened Walker config updates to change only the `theme` key (without clobbering keys like `theme_name`).
+- Fixed Walker auto-theme cleanup to consistently replace `theme-manager-auto` in `~/.config/walker/themes`.
+- Added Walker override flags for parity with Waybar:
+  - `set <theme> --walker [name]`
+  - `next --walker [name]`
+  - `preset save --walker <mode|name>`
+  - `preset load --walker [name]`
+- Refactored shared none/auto/named parsing and command context construction in the Rust CLI to reduce drift.
+- Updated README command reference to document Walker command and browse tab coverage.
+- Added `omarchy-restart-walker` to the apply/reload pipeline so Walker changes take effect immediately.
+- Browse component tabs now use explicit no-op selections (`No Waybar change`, `No Walker change`, `No Starship change`) that always leave the current component config untouched.
+- Added Omarchy default component linking:
+  - Waybar `omarchy-default` directory symlink in `~/.config/waybar/themes/`
+  - Walker `omarchy-default` directory symlink in `~/.config/walker/themes/`
+  - Starship `omarchy-default.toml` symlink in `~/.config/starship-themes/`
+- Added Hyprlock module parity with Waybar/Walker:
+  - `set/next/preset load` support `--hyprlock [name]`
+  - `preset save --hyprlock <mode|name>`
+  - `hyprlock <mode>` standalone command
+  - TUI Hyprlock tab with `No Hyprlock change`, auto theme, and named shared themes
+  - Omarchy default Hyprlock theme auto-linking to `~/.config/hypr/themes/hyprlock/omarchy-default`
+- Hyprlock apply now targets `~/.config/omarchy/current/theme/hyprlock.conf` (Omarchy source-chain compatible) instead of writing into `~/.config/hypr/`.
+- Added warning when `~/.config/hypr/hyprlock.conf` does not source the current theme hyprlock path.
+- Hyprlock host-config compatibility hardening:
+  - Style-only Hyprlock themes now restore/use the Omarchy wrapper host config.
+  - Full-layout Hyprlock themes switch host config to minimal source-only mode to prevent duplicate UI widgets.
+  - Custom host `~/.config/hypr/hyprlock.conf` that does not source current theme is preserved with an explicit warning.
+  - TUI only injects `omarchy-default` when a real Omarchy default source is discoverable.
+- Unified version display onto a single source: repository `VERSION` file now drives Rust CLI/TUI version output and Bash CLI version output.
+
 ## 0.2.9
 - Theme-specific Starship configs now use `starship.toml` instead of `starship.yaml`.
 
