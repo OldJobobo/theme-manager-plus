@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.3.0
+
 - Walker theme updates now only rewrite the `theme` key in `~/.config/walker/config.toml`.
 - Walker auto mode now reliably replaces `theme-manager-auto` under `~/.config/walker/themes`.
 - New Walker override flags are available across core flows:

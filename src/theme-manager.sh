@@ -36,7 +36,7 @@ resolve_repo_version() {
       return
     fi
   fi
-  echo "0.2.9"
+  echo "0.3.0"
 }
 
 VERSION="$(resolve_repo_version)"

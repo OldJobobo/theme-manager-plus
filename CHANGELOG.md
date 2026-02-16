@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## 0.3.0
+
 - Hardened Walker config updates to change only the `theme` key (without clobbering keys like `theme_name`).
 - Fixed Walker auto-theme cleanup to consistently replace `theme-manager-auto` in `~/.config/walker/themes`.
 - Added Walker override flags for parity with Waybar:
