@@ -129,6 +129,8 @@ Full-screen selector with previews.
 
 ### `install <git-url>` / `update` / `remove [theme]`
 
+**Experimental**
+
 - `install`: clone and activate a theme
 - `update`: pull updates for git-based themes
 - `remove`: delete a theme directory
