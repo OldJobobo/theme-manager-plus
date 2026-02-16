@@ -1988,6 +1988,7 @@ fn render_status_bar(
   save_input: &str,
 ) {
   let mut spans = Vec::new();
+  let mut segments: Vec<(String, Color, Color)> = Vec::new();
   let tab_label = match tab {
     BrowseTab::Theme => "Theme",
     BrowseTab::Waybar => "Waybar",
@@ -1998,64 +1999,40 @@ fn render_status_bar(
     BrowseTab::Review => "Review",
   };
 
-  push_status_segment(&mut spans, tab_label, Color::Black, Color::Yellow);
-  push_status_sep(&mut spans);
-  push_status_segment(
-    &mut spans,
-    &format!("Theme: {}", title_case_theme(theme)),
-    Color::Black,
-    Color::Cyan,
-  );
-  push_status_sep(&mut spans);
-  push_status_segment(&mut spans, &format!("Waybar: {waybar}"), Color::Black, Color::Green);
-  push_status_sep(&mut spans);
-  push_status_segment(&mut spans, &format!("Walker: {walker}"), Color::Black, Color::Blue);
-  push_status_sep(&mut spans);
-  push_status_segment(
-    &mut spans,
-    &format!("Hyprlock: {hyprlock}"),
-    Color::Black,
-    Color::LightGreen,
-  );
-  push_status_sep(&mut spans);
-  push_status_segment(
-    &mut spans,
-    &format!("Starship: {starship}"),
-    Color::Black,
-    Color::Magenta,
-  );
+  segments.push((tab_label.to_string(), Color::Black, Color::Yellow));
+  segments.push((format!("Theme: {}", title_case_theme(theme)), Color::Black, Color::Cyan));
+  segments.push((format!("Waybar: {waybar}"), Color::Black, Color::Green));
+  segments.push((format!("Walker: {walker}"), Color::Black, Color::Blue));
+  segments.push((format!("Hyprlock: {hyprlock}"), Color::Black, Color::LightGreen));
+  segments.push((format!("Starship: {starship}"), Color::Black, Color::Magenta));
 
   if tab == BrowseTab::Review && !save_active {
-    push_status_sep(&mut spans);
-    push_status_segment(
-      &mut spans,
-      "Ctrl+Enter Apply",
-      Color::Black,
-      Color::LightYellow,
-    );
-    push_status_sep(&mut spans);
-    push_status_segment(
-      &mut spans,
-      "Ctrl+S Save Preset",
-      Color::Black,
-      Color::LightYellow,
-    );
+    segments.push(("Ctrl+Enter Apply".to_string(), Color::Black, Color::LightYellow));
+    segments.push(("Ctrl+S Save Preset".to_string(), Color::Black, Color::LightYellow));
   }
 
   if save_active {
     let cursor = "_";
-    push_status_sep(&mut spans);
-    push_status_segment(
-      &mut spans,
-      &format!("Save preset: {save_input}{cursor}"),
+    segments.push((
+      format!("Save preset: {save_input}{cursor}"),
       Color::Black,
       Color::Blue,
-    );
+    ));
   }
 
   if let Some(message) = status {
-    push_status_sep(&mut spans);
-    push_status_segment(&mut spans, message, Color::Black, Color::LightBlue);
+    segments.push((message.to_string(), Color::Black, Color::LightBlue));
+  }
+
+  for (idx, (label, fg, bg)) in segments.iter().enumerate() {
+    push_status_segment(&mut spans, label, *fg, *bg);
+    if idx + 1 < segments.len() {
+      let next_bg = segments[idx + 1].2;
+      spans.push(Span::styled("", Style::default().fg(*bg).bg(next_bg)));
+    }
+  }
+  if let Some((_, _, last_bg)) = segments.last() {
+    spans.push(Span::styled("", Style::default().fg(*last_bg).bg(Color::Reset)));
   }
 
   let line = Line::from(spans);
@@ -2068,10 +2045,6 @@ fn push_status_segment(spans: &mut Vec<Span<'static>>, label: &str, fg: Color, b
     format!(" {} ", label),
     Style::default().fg(fg).bg(bg).add_modifier(Modifier::BOLD),
   ));
-}
-
-fn push_status_sep(spans: &mut Vec<Span<'static>>) {
-  spans.push(Span::styled(">", Style::default().fg(Color::DarkGray)));
 }
 
 fn preset_summary_text(
@@ -2549,7 +2522,7 @@ fn current_waybar_label(items: &[LabeledItem], state: &PickerState) -> String {
   let item = &items[index];
   match item.kind.as_str() {
     "theme" => "Theme waybar".to_string(),
-    "none" => "No Waybar change".to_string(),
+    "none" => "None".to_string(),
     _ => item.label.clone(),
   }
 }
@@ -2562,7 +2535,7 @@ fn current_starship_label(items: &[LabeledItem], state: &PickerState) -> String 
   let item = &items[index];
   match item.kind.as_str() {
     "theme" => "Theme starship".to_string(),
-    "none" => "No Starship change".to_string(),
+    "none" => "None".to_string(),
     _ => item.label.clone(),
   }
 }
@@ -2587,7 +2560,7 @@ fn current_walker_label(items: &[LabeledItem], state: &PickerState) -> String {
   let item = &items[index];
   match item.kind.as_str() {
     "theme" => "Theme walker".to_string(),
-    "none" => "No Walker change".to_string(),
+    "none" => "None".to_string(),
     _ => item.label.clone(),
   }
 }
@@ -2612,7 +2585,7 @@ fn current_hyprlock_label(items: &[LabeledItem], state: &PickerState) -> String 
   let item = &items[index];
   match item.kind.as_str() {
     "theme" => "Theme hyprlock".to_string(),
-    "none" => "No Hyprlock change".to_string(),
+    "none" => "None".to_string(),
     _ => item.label.clone(),
   }
 }
