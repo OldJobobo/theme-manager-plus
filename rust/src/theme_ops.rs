@@ -11,6 +11,7 @@ use crate::paths::{
   current_theme_dir, current_theme_name, normalize_theme_name, resolve_link_target,
   title_case_theme,
 };
+use crate::hyprlock;
 use crate::starship;
 use crate::walker;
 use crate::waybar;
@@ -24,6 +25,13 @@ pub enum WaybarMode {
 
 #[derive(Debug, Clone)]
 pub enum WalkerMode {
+  None,
+  Auto,
+  Named,
+}
+
+#[derive(Debug, Clone)]
+pub enum HyprlockMode {
   None,
   Auto,
   Named,
@@ -46,6 +54,8 @@ pub struct CommandContext<'a> {
   pub waybar_name: Option<String>,
   pub walker_mode: WalkerMode,
   pub walker_name: Option<String>,
+  pub hyprlock_mode: HyprlockMode,
+  pub hyprlock_name: Option<String>,
   pub starship_mode: StarshipMode,
   pub debug_awww: bool,
 }
@@ -85,6 +95,14 @@ pub fn starship_from_defaults(config: &ResolvedConfig) -> StarshipMode {
       }
     }
     _ => StarshipMode::None,
+  }
+}
+
+pub fn hyprlock_from_defaults(config: &ResolvedConfig) -> (HyprlockMode, Option<String>) {
+  match config.default_hyprlock_mode.as_deref() {
+    Some("auto") => (HyprlockMode::Auto, None),
+    Some("named") => (HyprlockMode::Named, config.default_hyprlock_name.clone()),
+    _ => (HyprlockMode::None, None),
   }
 }
 
@@ -129,6 +147,7 @@ pub fn cmd_set(ctx: &CommandContext<'_>, theme_name: &str) -> Result<()> {
   if !ctx.skip_apps {
     waybar_restart = waybar::prepare_waybar(ctx, &theme_source)?;
     walker::prepare_walker(ctx, &theme_source)?;
+    hyprlock::prepare_hyprlock(ctx, &theme_source)?;
     starship::apply_starship(ctx, &theme_source)?;
   }
 
@@ -194,6 +213,8 @@ pub fn cmd_bg_next(config: &ResolvedConfig, debug_awww: bool) -> Result<()> {
     waybar_name: None,
     walker_mode: WalkerMode::None,
     walker_name: None,
+    hyprlock_mode: HyprlockMode::None,
+    hyprlock_name: None,
     starship_mode: StarshipMode::None,
     debug_awww,
   };
@@ -210,7 +231,7 @@ pub fn cmd_bg_next(config: &ResolvedConfig, debug_awww: bool) -> Result<()> {
 }
 
 pub fn cmd_version() {
-  println!("{}", env!("CARGO_PKG_VERSION"));
+  println!("{}", env!("THEME_MANAGER_VERSION"));
 }
 
 pub fn cmd_browse_stub(_ctx: &CommandContext<'_>) -> Result<()> {

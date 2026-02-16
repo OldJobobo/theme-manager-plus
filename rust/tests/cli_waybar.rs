@@ -166,3 +166,43 @@ fn waybar_symlink_backs_up_existing_non_symlinks() {
   assert!(backup_root.join("style.css").is_file());
   assert!(backup_root.join("assets").is_dir());
 }
+
+#[test]
+fn waybar_links_omarchy_default_theme_when_missing() {
+  let env = setup_env();
+  add_omarchy_stubs(&env.bin);
+  let themes = omarchy_dir(&env.home).join("themes");
+  fs::create_dir_all(themes.join("theme-a")).unwrap();
+
+  let omarchy_default = env.home.join(".local/share/omarchy/default/waybar");
+  fs::create_dir_all(&omarchy_default).unwrap();
+  fs::write(omarchy_default.join("config.jsonc"), "omarchy-cfg").unwrap();
+  fs::write(omarchy_default.join("style.css"), "omarchy-style").unwrap();
+
+  let cfg_dir = env.home.join(".config/theme-manager");
+  fs::create_dir_all(&cfg_dir).unwrap();
+  write_toml(
+    &cfg_dir.join("config.toml"),
+    r#"[waybar]
+apply_mode = "symlink"
+default_mode = "named"
+default_name = "omarchy-default"
+"#,
+  );
+
+  let mut cmd = cmd_with_env(&env);
+  cmd.env_remove("THEME_MANAGER_SKIP_APPS");
+  cmd.args(["set", "theme-a"]);
+  cmd.assert().success();
+
+  let link_path = env.home.join(".config/waybar/themes/omarchy-default");
+  let meta = fs::symlink_metadata(&link_path).unwrap();
+  assert!(meta.file_type().is_symlink());
+  let target = fs::read_link(&link_path).unwrap();
+  assert_eq!(target, omarchy_default);
+
+  let applied = env.home.join(".config/waybar/config.jsonc");
+  assert_is_symlink(&applied);
+  let applied_target = fs::read_link(applied).unwrap();
+  assert!(applied_target.ends_with("themes/omarchy-default/config.jsonc"));
+}

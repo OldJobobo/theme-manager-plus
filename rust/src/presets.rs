@@ -19,6 +19,7 @@ pub struct PresetEntry {
   pub theme: Option<String>,
   pub waybar: Option<PresetWaybarEntry>,
   pub walker: Option<PresetWalkerEntry>,
+  pub hyprlock: Option<PresetHyprlockEntry>,
   pub starship: Option<PresetStarshipEntry>,
 }
 
@@ -30,6 +31,12 @@ pub struct PresetWaybarEntry {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PresetWalkerEntry {
+  pub mode: Option<String>,
+  pub name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PresetHyprlockEntry {
   pub mode: Option<String>,
   pub name: Option<String>,
 }
@@ -56,6 +63,13 @@ pub enum PresetWalkerValue {
 }
 
 #[derive(Debug, Clone)]
+pub enum PresetHyprlockValue {
+  None,
+  Auto,
+  Named(String),
+}
+
+#[derive(Debug, Clone)]
 pub enum PresetStarshipValue {
   None,
   Preset(String),
@@ -69,6 +83,7 @@ pub struct PresetDefinition {
   pub theme: String,
   pub waybar: PresetWaybarValue,
   pub walker: PresetWalkerValue,
+  pub hyprlock: PresetHyprlockValue,
   pub starship: PresetStarshipValue,
 }
 
@@ -77,6 +92,7 @@ pub struct PresetSummary {
   pub theme: String,
   pub waybar: String,
   pub walker: String,
+  pub hyprlock: String,
   pub starship: String,
   pub errors: Vec<String>,
 }
@@ -151,6 +167,7 @@ pub fn summarize_preset(
 
   let waybar_value = parse_waybar(entry.waybar.as_ref(), &mut errors);
   let walker_value = parse_walker(entry.walker.as_ref(), &mut errors);
+  let hyprlock_value = parse_hyprlock(entry.hyprlock.as_ref(), &mut errors);
   let starship_value = parse_starship(entry.starship.as_ref(), &mut errors);
 
   if let Some(theme_name) = theme.as_ref() {
@@ -171,6 +188,7 @@ pub fn summarize_preset(
     theme: theme_label,
     waybar: format_waybar(&waybar_value),
     walker: format_walker(&walker_value),
+    hyprlock: format_hyprlock(&hyprlock_value),
     starship: format_starship(&starship_value),
     errors,
   }
@@ -195,6 +213,7 @@ pub fn load_preset_definition(config: &ResolvedConfig, name: &str) -> Result<Pre
     theme: theme.clone(),
     waybar: parse_waybar(entry.waybar.as_ref(), &mut Vec::new()),
     walker: parse_walker(entry.walker.as_ref(), &mut Vec::new()),
+    hyprlock: parse_hyprlock(entry.hyprlock.as_ref(), &mut Vec::new()),
     starship: parse_starship(entry.starship.as_ref(), &mut Vec::new()),
   })
 }
@@ -327,6 +346,39 @@ fn parse_walker(entry: Option<&PresetWalkerEntry>, errors: &mut Vec<String>) -> 
     _ => {
       errors.push(format!("invalid walker.mode: {mode}"));
       PresetWalkerValue::None
+    }
+  }
+}
+
+fn format_hyprlock(value: &PresetHyprlockValue) -> String {
+  match value {
+    PresetHyprlockValue::None => "none".to_string(),
+    PresetHyprlockValue::Auto => "auto".to_string(),
+    PresetHyprlockValue::Named(name) => format!("named ({name})"),
+  }
+}
+
+fn parse_hyprlock(
+  entry: Option<&PresetHyprlockEntry>,
+  errors: &mut Vec<String>,
+) -> PresetHyprlockValue {
+  let mode = entry
+    .and_then(|val| val.mode.as_deref())
+    .unwrap_or("none")
+    .trim();
+  match mode {
+    "" | "none" => PresetHyprlockValue::None,
+    "auto" => PresetHyprlockValue::Auto,
+    "named" => match entry.and_then(|val| val.name.clone()) {
+      Some(name) if !name.trim().is_empty() => PresetHyprlockValue::Named(name),
+      _ => {
+        errors.push("hyprlock.mode = named requires hyprlock.name".to_string());
+        PresetHyprlockValue::None
+      }
+    },
+    _ => {
+      errors.push(format!("invalid hyprlock.mode: {mode}"));
+      PresetHyprlockValue::None
     }
   }
 }

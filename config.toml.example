@@ -7,23 +7,30 @@
 # waybar_themes_dir = "~/.config/waybar/themes"
 # walker_dir = "~/.config/walker"
 # walker_themes_dir = "~/.config/walker/themes"
+# hyprlock_dir = "~/.config/hypr"
+# hyprlock_themes_dir = "~/.config/hypr/themes/hyprlock"
 # starship_config = "~/.config/starship.toml"
 # starship_themes_dir = "~/.config/starship-themes"
 
 [waybar]
 # apply_mode = "symlink" # symlink|copy
 # default_mode = "auto" # auto|named|"" (empty = none)
-# default_name = ""
+# default_name = "" # e.g. "omarchy-default"
 
 [walker]
 # apply_mode = "symlink" # symlink|copy
 # default_mode = "auto" # auto|named|"" (empty = none)
-# default_name = ""
+# default_name = "" # e.g. "omarchy-default"
+
+[hyprlock]
+# apply_mode = "symlink" # symlink|copy
+# default_mode = "auto" # auto|named|"" (empty = none)
+# default_name = "" # e.g. "omarchy-default"
 
 [starship]
 # default_mode = "" # preset|named|"" (empty = none)
 # default_preset = ""
-# default_name = ""
+# default_name = "" # e.g. "omarchy-default"
 
 [tui]
 # apply_key = "ctrl+enter" # examples: "ctrl+enter", "ctrl+m", "enter"

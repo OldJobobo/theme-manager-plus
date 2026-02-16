@@ -28,13 +28,16 @@ use syntect::util::as_24_bit_terminal_escaped;
 use tempfile::TempDir;
 
 use crate::config::ResolvedConfig;
+use crate::hyprlock;
 use crate::paths::{normalize_theme_name, title_case_theme};
-use crate::theme_ops::{starship_from_defaults, waybar_from_defaults, walker_from_defaults, StarshipMode, WaybarMode, WalkerMode};
 use crate::theme_ops;
 use crate::presets;
 use crate::preview;
+use crate::starship;
+use crate::walker;
+use crate::waybar;
 
-const APP_TITLE: &str = concat!("Theme Manager+ v", env!("CARGO_PKG_VERSION"));
+const APP_TITLE: &str = concat!("Theme Manager+ v", env!("THEME_MANAGER_VERSION"));
 const NO_THEME_CHANGE_VALUE: &str = "__no_theme_change__";
 const NO_THEME_CHANGE_LABEL: &str = "No theme change";
 
@@ -49,6 +52,7 @@ enum BrowseTab {
   Theme,
   Waybar,
   Walker,
+  Hyprlock,
   Starship,
   Presets,
   Review,
@@ -60,12 +64,13 @@ pub struct BrowseSelection {
   pub no_theme_change: bool,
   pub waybar: WaybarSelection,
   pub walker: WalkerSelection,
+  pub hyprlock: HyprlockSelection,
   pub starship: StarshipSelection,
 }
 
 #[derive(Debug)]
 pub enum WaybarSelection {
-  UseDefaults,
+  NoChange,
   None,
   Auto,
   Named(String),
@@ -73,7 +78,15 @@ pub enum WaybarSelection {
 
 #[derive(Debug)]
 pub enum WalkerSelection {
-  UseDefaults,
+  NoChange,
+  None,
+  Auto,
+  Named(String),
+}
+
+#[derive(Debug)]
+pub enum HyprlockSelection {
+  NoChange,
   None,
   Auto,
   Named(String),
@@ -81,7 +94,7 @@ pub enum WalkerSelection {
 
 #[derive(Debug)]
 pub enum StarshipSelection {
-  UseDefaults,
+  NoChange,
   None,
   Preset(String),
   Named(String),
@@ -256,7 +269,15 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
   let backend = PreviewBackend::detect();
   let mut terminal = setup_terminal()?;
   let mut tab = BrowseTab::Theme;
-  let tab_titles = ["Theme", "Waybar", "Walker", "Starship", "Review", "Presets"];
+  let tab_titles = [
+    "Theme",
+    "Waybar",
+    "Walker",
+    "Hyprlock",
+    "Starship",
+    "Review",
+    "Presets",
+  ];
   let mut tab_ranges: Vec<(u16, u16, usize)> = Vec::new();
   let mut active_search_area = Rect::ZERO;
   let mut active_list_inner = Rect::ZERO;
@@ -286,12 +307,15 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
 
   let mut waybar_items = build_waybar_items(config, &theme_path)?;
   let mut walker_items = build_walker_items(config, &theme_path)?;
+  let mut hyprlock_items = build_hyprlock_items(config, &theme_path)?;
   let mut starship_items = build_starship_items(config, &theme_path)?;
   let mut waybar_state = PickerState::new();
   let mut walker_state = PickerState::new();
+  let mut hyprlock_state = PickerState::new();
   let mut starship_state = PickerState::new();
   rebuild_filtered(&mut waybar_state, &waybar_items);
   rebuild_filtered(&mut walker_state, &walker_items);
+  rebuild_filtered(&mut hyprlock_state, &hyprlock_items);
   rebuild_filtered(&mut starship_state, &starship_items);
 
   let mut preset_file = presets::load_presets()?;
@@ -403,6 +427,30 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
           active_code_inner = areas.code_inner;
           active_code_area = areas.code_area;
         }
+        BrowseTab::Hyprlock => {
+          let areas = render_picker(
+            frame,
+            content_area,
+            "Select Hyprlock",
+            "Image Preview",
+            &hyprlock_items,
+            &mut hyprlock_state,
+            &backend,
+            |idx| build_hyprlock_code_preview(config, &theme_path, &hyprlock_items[idx]),
+            |idx| hyprlock_items[idx].preview.clone(),
+            |_idx| None,
+            true,
+            if status_active && status_tab == BrowseTab::Hyprlock {
+              Some(status_message.as_str())
+            } else {
+              None
+            },
+          );
+          active_search_area = areas.search_area;
+          active_list_inner = areas.list_inner;
+          active_code_inner = areas.code_inner;
+          active_code_area = areas.code_area;
+        }
         BrowseTab::Starship => {
           let areas = render_picker(
             frame,
@@ -456,6 +504,7 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
             &selected_theme,
             current_waybar_label(&waybar_items, &waybar_state),
             current_walker_label(&walker_items, &walker_state),
+            current_hyprlock_label(&hyprlock_items, &hyprlock_state),
             current_starship_label(&starship_items, &starship_state),
           );
         }
@@ -468,6 +517,7 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
             &theme_label_for_display(&selected_theme),
             current_waybar_label(&waybar_items, &waybar_state),
             current_walker_label(&walker_items, &walker_state),
+            current_hyprlock_label(&hyprlock_items, &hyprlock_state),
             current_starship_label(&starship_items, &starship_state),
             status_active.then_some(status_message.as_str()),
             preset_save_active,
@@ -529,10 +579,10 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                     status_message = "Preset name required".to_string();
                   } else {
                     let entry = build_preset_entry_from_selection(
-                      config,
                       &selected_theme,
                       current_waybar_selection(&waybar_items, &waybar_state),
                       current_walker_selection(&walker_items, &walker_state),
+                      current_hyprlock_selection(&hyprlock_items, &hyprlock_state),
                       current_starship_selection(
                         &starship_items,
                         &starship_state,
@@ -608,6 +658,7 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
               &mut theme_state,
               &mut waybar_state,
               &mut walker_state,
+              &mut hyprlock_state,
               &mut starship_state,
               &mut preset_state,
             ) {
@@ -638,11 +689,13 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                     &mut theme_state,
                     &mut waybar_state,
                     &mut walker_state,
+                    &mut hyprlock_state,
                     &mut starship_state,
                     &mut preset_state,
                     &theme_items,
                     &waybar_items,
                     &walker_items,
+                    &hyprlock_items,
                     &starship_items,
                     &preset_items,
                   );
@@ -663,6 +716,8 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
               mark_force_clear(
                 &mut theme_state,
                 &mut waybar_state,
+                &mut walker_state,
+                &mut hyprlock_state,
                 &mut starship_state,
                 &mut preset_state,
               );
@@ -677,6 +732,8 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
               mark_force_clear(
                 &mut theme_state,
                 &mut waybar_state,
+                &mut walker_state,
+                &mut hyprlock_state,
                 &mut starship_state,
                 &mut preset_state,
               );
@@ -708,6 +765,7 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
               no_theme_change: selected_theme == NO_THEME_CHANGE_VALUE,
               waybar: current_waybar_selection(&waybar_items, &waybar_state),
               walker: current_walker_selection(&walker_items, &walker_state),
+              hyprlock: current_hyprlock_selection(&hyprlock_items, &hyprlock_state),
               starship: current_starship_selection(
                 &starship_items,
                 &starship_state,
@@ -732,6 +790,8 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                 &mut waybar_state,
                 &mut walker_items,
                 &mut walker_state,
+                &mut hyprlock_items,
+                &mut hyprlock_state,
                 &mut starship_items,
                 &mut starship_state,
               ) {
@@ -755,6 +815,7 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
               BrowseTab::Theme => "Theme selected".to_string(),
               BrowseTab::Waybar => "Waybar selected".to_string(),
               BrowseTab::Walker => "Walker selected".to_string(),
+              BrowseTab::Hyprlock => "Hyprlock selected".to_string(),
               BrowseTab::Starship => "Starship selected".to_string(),
               BrowseTab::Presets => "Preset selected".to_string(),
               BrowseTab::Review => String::new(),
@@ -764,6 +825,7 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
               BrowseTab::Theme => theme_state.filtered_indices.len(),
               BrowseTab::Waybar => waybar_state.filtered_indices.len(),
               BrowseTab::Walker => walker_state.filtered_indices.len(),
+              BrowseTab::Hyprlock => hyprlock_state.filtered_indices.len(),
               BrowseTab::Starship => starship_state.filtered_indices.len(),
               BrowseTab::Presets => preset_state.filtered_indices.len(),
               BrowseTab::Review => 0,
@@ -773,6 +835,7 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
               &mut theme_state,
               &mut waybar_state,
               &mut walker_state,
+              &mut hyprlock_state,
               &mut starship_state,
               &mut preset_state,
             ) {
@@ -793,6 +856,7 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
               BrowseTab::Theme => theme_state.filtered_indices.len(),
               BrowseTab::Waybar => waybar_state.filtered_indices.len(),
               BrowseTab::Walker => walker_state.filtered_indices.len(),
+              BrowseTab::Hyprlock => hyprlock_state.filtered_indices.len(),
               BrowseTab::Starship => starship_state.filtered_indices.len(),
               BrowseTab::Presets => preset_state.filtered_indices.len(),
               BrowseTab::Review => 0,
@@ -802,6 +866,7 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
               &mut theme_state,
               &mut waybar_state,
               &mut walker_state,
+              &mut hyprlock_state,
               &mut starship_state,
               &mut preset_state,
             ) {
@@ -868,6 +933,8 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                   mark_force_clear(
                     &mut theme_state,
                     &mut waybar_state,
+                    &mut walker_state,
+                    &mut hyprlock_state,
                     &mut starship_state,
                     &mut preset_state,
                   );
@@ -881,18 +948,20 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
               let items_len = match tab {
                 BrowseTab::Theme => theme_state.filtered_indices.len(),
                 BrowseTab::Waybar => waybar_state.filtered_indices.len(),
-              BrowseTab::Walker => walker_state.filtered_indices.len(),
+                BrowseTab::Walker => walker_state.filtered_indices.len(),
+                BrowseTab::Hyprlock => hyprlock_state.filtered_indices.len(),
                 BrowseTab::Starship => starship_state.filtered_indices.len(),
                 BrowseTab::Presets => preset_state.filtered_indices.len(),
                 BrowseTab::Review => 0,
               };
               if let Some(state) = active_picker_mut(
-              tab,
-              &mut theme_state,
-              &mut waybar_state,
-              &mut walker_state,
-              &mut starship_state,
-              &mut preset_state,
+                tab,
+                &mut theme_state,
+                &mut waybar_state,
+                &mut walker_state,
+                &mut hyprlock_state,
+                &mut starship_state,
+                &mut preset_state,
               ) {
                 let position = Position {
                   x: mouse.column,
@@ -917,18 +986,20 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
               let items_len = match tab {
                 BrowseTab::Theme => theme_state.filtered_indices.len(),
                 BrowseTab::Waybar => waybar_state.filtered_indices.len(),
-              BrowseTab::Walker => walker_state.filtered_indices.len(),
+                BrowseTab::Walker => walker_state.filtered_indices.len(),
+                BrowseTab::Hyprlock => hyprlock_state.filtered_indices.len(),
                 BrowseTab::Starship => starship_state.filtered_indices.len(),
                 BrowseTab::Presets => preset_state.filtered_indices.len(),
                 BrowseTab::Review => 0,
               };
               if let Some(state) = active_picker_mut(
-              tab,
-              &mut theme_state,
-              &mut waybar_state,
-              &mut walker_state,
-              &mut starship_state,
-              &mut preset_state,
+                tab,
+                &mut theme_state,
+                &mut waybar_state,
+                &mut walker_state,
+                &mut hyprlock_state,
+                &mut starship_state,
+                &mut preset_state,
               ) {
                 let position = Position {
                   x: mouse.column,
@@ -948,18 +1019,20 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
               let items_len = match tab {
                 BrowseTab::Theme => theme_state.filtered_indices.len(),
                 BrowseTab::Waybar => waybar_state.filtered_indices.len(),
-              BrowseTab::Walker => walker_state.filtered_indices.len(),
+                BrowseTab::Walker => walker_state.filtered_indices.len(),
+                BrowseTab::Hyprlock => hyprlock_state.filtered_indices.len(),
                 BrowseTab::Starship => starship_state.filtered_indices.len(),
                 BrowseTab::Presets => preset_state.filtered_indices.len(),
                 BrowseTab::Review => 0,
               };
               if let Some(state) = active_picker_mut(
-              tab,
-              &mut theme_state,
-              &mut waybar_state,
-              &mut walker_state,
-              &mut starship_state,
-              &mut preset_state,
+                tab,
+                &mut theme_state,
+                &mut waybar_state,
+                &mut walker_state,
+                &mut hyprlock_state,
+                &mut starship_state,
+                &mut preset_state,
               ) {
                 let position = Position {
                   x: mouse.column,
@@ -991,24 +1064,33 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
         theme_path = resolve_theme_path_for_selection(config, &selected_theme)?;
         let waybar_key = selected_item_key(&waybar_items, &waybar_state);
         let walker_key = selected_item_key(&walker_items, &walker_state);
+        let hyprlock_key = selected_item_key(&hyprlock_items, &hyprlock_state);
         let starship_key = selected_item_key(&starship_items, &starship_state);
 
         waybar_items = build_waybar_items(config, &theme_path)?;
         walker_items = build_walker_items(config, &theme_path)?;
+        hyprlock_items = build_hyprlock_items(config, &theme_path)?;
         starship_items = build_starship_items(config, &theme_path)?;
 
         reset_picker_cache(&mut waybar_state);
         reset_picker_cache(&mut walker_state);
+        reset_picker_cache(&mut hyprlock_state);
         reset_picker_cache(&mut starship_state);
 
         rebuild_filtered(&mut waybar_state, &waybar_items);
         rebuild_filtered(&mut walker_state, &walker_items);
+        rebuild_filtered(&mut hyprlock_state, &hyprlock_items);
         rebuild_filtered(&mut starship_state, &starship_items);
         select_item_by_key(&mut waybar_state, &waybar_items, waybar_key);
         select_item_by_key(&mut walker_state, &walker_items, walker_key);
+        select_item_by_key(&mut hyprlock_state, &hyprlock_items, hyprlock_key);
         select_item_by_key(&mut starship_state, &starship_items, starship_key);
         ensure_selected(&mut waybar_state.list_state, waybar_state.filtered_indices.len());
         ensure_selected(&mut walker_state.list_state, walker_state.filtered_indices.len());
+        ensure_selected(
+          &mut hyprlock_state.list_state,
+          hyprlock_state.filtered_indices.len(),
+        );
         ensure_selected(
           &mut starship_state.list_state,
           starship_state.filtered_indices.len(),
@@ -1067,15 +1149,11 @@ struct PresetItem {
 }
 
 fn build_waybar_items(config: &ResolvedConfig, theme_path: &Path) -> Result<Vec<LabeledItem>> {
+  waybar::ensure_omarchy_default_theme_link(config, true)?;
+
   let mut items = Vec::new();
   items.push(OptionItem::with_kind(
-    "Omarchy default".to_string(),
-    "default".to_string(),
-    "default",
-    None,
-  ));
-  items.push(OptionItem::with_kind(
-    "No waybar changes".to_string(),
+    "No Waybar change".to_string(),
     "none".to_string(),
     "none",
     None,
@@ -1106,15 +1184,11 @@ fn build_waybar_items(config: &ResolvedConfig, theme_path: &Path) -> Result<Vec<
 }
 
 fn build_starship_items(config: &ResolvedConfig, theme_path: &Path) -> Result<Vec<LabeledItem>> {
+  starship::ensure_omarchy_default_theme_link(config, true)?;
+
   let mut items = Vec::new();
   items.push(OptionItem::with_kind(
-    "Omarchy default".to_string(),
-    "default".to_string(),
-    "default",
-    None,
-  ));
-  items.push(OptionItem::with_kind(
-    "No Starship changes".to_string(),
+    "No Starship change".to_string(),
     "none".to_string(),
     "none",
     None,
@@ -1163,15 +1237,11 @@ fn build_preset_items(file: &presets::PresetFile) -> Vec<PresetItem> {
 }
 
 fn build_walker_items(config: &ResolvedConfig, theme_path: &Path) -> Result<Vec<LabeledItem>> {
+  walker::ensure_omarchy_default_theme_link(config, true)?;
+
   let mut items = Vec::new();
   items.push(OptionItem::with_kind(
-    "Omarchy default".to_string(),
-    "default".to_string(),
-    "default",
-    None,
-  ));
-  items.push(OptionItem::with_kind(
-    "No walker changes".to_string(),
+    "No Walker change".to_string(),
     "none".to_string(),
     "none",
     None,
@@ -1201,14 +1271,54 @@ fn build_walker_items(config: &ResolvedConfig, theme_path: &Path) -> Result<Vec<
   Ok(items)
 }
 
+fn build_hyprlock_items(config: &ResolvedConfig, theme_path: &Path) -> Result<Vec<LabeledItem>> {
+  hyprlock::ensure_omarchy_default_theme_link(config, true)?;
+
+  let mut items = Vec::new();
+  items.push(OptionItem::with_kind(
+    "No Hyprlock change".to_string(),
+    "none".to_string(),
+    "none",
+    None,
+  ));
+
+  let theme_hyprlock = theme_path.join("hyprlock-theme");
+  if theme_hyprlock.join("hyprlock.conf").is_file() {
+    let preview_path = preview::find_theme_preview(&theme_hyprlock);
+    items.push(OptionItem::with_kind(
+      "Use theme hyprlock".to_string(),
+      "theme".to_string(),
+      "theme",
+      preview_path,
+    ));
+  }
+
+  let mut names = list_hyprlock_themes(&config.hyprlock_themes_dir)?;
+  if hyprlock::omarchy_default_theme_available(config) && !names.iter().any(|name| name == "omarchy-default") {
+    names.push("omarchy-default".to_string());
+    names.sort();
+  }
+
+  for name in names {
+    let preview_path = preview::find_theme_preview(&config.hyprlock_themes_dir.join(&name));
+    items.push(OptionItem::with_kind(
+      name.clone(),
+      name,
+      "named",
+      preview_path,
+    ));
+  }
+
+  Ok(items)
+}
+
 fn build_walker_code_preview(
   config: &ResolvedConfig,
   theme_path: &Path,
   item: &LabeledItem,
 ) -> Text<'static> {
   match item.kind.as_str() {
-    "default" => Text::from("Using Omarchy default Walker config."),
-    "none" => Text::from("No Walker changes."),
+    "none" => Text::from("No Walker change."),
     "theme" => {
       let base = theme_path.join("walker-theme");
       let mut parts = vec![("style.css", base.join("style.css"), "css")];
@@ -1230,14 +1340,36 @@ fn build_walker_code_preview(
   }
 }
 
+fn build_hyprlock_code_preview(
+  config: &ResolvedConfig,
+  theme_path: &Path,
+  item: &LabeledItem,
+) -> Text<'static> {
+  match item.kind.as_str() {
+    "none" => Text::from("No Hyprlock change."),
+    "theme" => load_code_preview(
+      "hyprlock.conf",
+      theme_path.join("hyprlock-theme/hyprlock.conf"),
+      "conf",
+    ),
+    _ => load_code_preview(
+      "hyprlock.conf",
+      config
+        .hyprlock_themes_dir
+        .join(&item.value)
+        .join("hyprlock.conf"),
+      "conf",
+    ),
+  }
+}
+
 fn build_waybar_code_preview(
   config: &ResolvedConfig,
   theme_path: &Path,
   item: &LabeledItem,
 ) -> Text<'static> {
   match item.kind.as_str() {
-    "default" => Text::from("Using Omarchy default Waybar config."),
-    "none" => Text::from("No Waybar changes."),
+    "none" => Text::from("No Waybar change."),
     "theme" => {
       let base = theme_path.join("waybar-theme");
       let parts = vec![
@@ -1263,8 +1395,7 @@ fn build_starship_code_preview(
   item: &LabeledItem,
 ) -> Text<'static> {
   match item.kind.as_str() {
-    "default" => Text::from("No Starship config change."),
-    "none" => Text::from("No Starship config change."),
+    "none" => Text::from("No Starship change."),
     "theme" => load_code_preview(
       "starship.toml",
       theme_path.join("starship.toml"),
@@ -1366,8 +1497,8 @@ fn render_starship_prompt_preview(
   theme_path: &Path,
   item: &LabeledItem,
 ) -> Text<'static> {
-  if item.kind.as_str() == "default" || item.kind.as_str() == "none" {
-    return Text::from("No Starship config change.\n\nThe current Omarchy theme prompt will be used.");
+  if item.kind.as_str() == "none" {
+    return Text::from("No Starship change.\n\nThe current prompt config remains as-is.");
   }
 
   if !command_exists("starship") {
@@ -1821,6 +1952,7 @@ fn render_review(
   selected_theme: &str,
   waybar_label: String,
   walker_label: String,
+  hyprlock_label: String,
   starship_label: String,
 ) {
   let lines = vec![
@@ -1829,6 +1961,7 @@ fn render_review(
     Line::from(format!("Theme: {}", title_case_theme(selected_theme))),
     Line::from(format!("Waybar: {}", waybar_label)),
     Line::from(format!("Walker: {}", walker_label)),
+    Line::from(format!("Hyprlock: {}", hyprlock_label)),
     Line::from(format!("Starship: {}", starship_label)),
     Line::from(""),
     Line::from("Apply: Ctrl+Enter"),
@@ -1848,6 +1981,7 @@ fn render_status_bar(
   theme: &str,
   waybar: String,
   walker: String,
+  hyprlock: String,
   starship: String,
   status: Option<&str>,
   save_active: bool,
@@ -1858,6 +1992,7 @@ fn render_status_bar(
     BrowseTab::Theme => "Theme",
     BrowseTab::Waybar => "Waybar",
     BrowseTab::Walker => "Walker",
+    BrowseTab::Hyprlock => "Hyprlock",
     BrowseTab::Starship => "Starship",
     BrowseTab::Presets => "Presets",
     BrowseTab::Review => "Review",
@@ -1875,6 +2010,13 @@ fn render_status_bar(
   push_status_segment(&mut spans, &format!("Waybar: {waybar}"), Color::Black, Color::Green);
   push_status_sep(&mut spans);
   push_status_segment(&mut spans, &format!("Walker: {walker}"), Color::Black, Color::Blue);
+  push_status_sep(&mut spans);
+  push_status_segment(
+    &mut spans,
+    &format!("Hyprlock: {hyprlock}"),
+    Color::Black,
+    Color::LightGreen,
+  );
   push_status_sep(&mut spans);
   push_status_segment(
     &mut spans,
@@ -1948,6 +2090,7 @@ fn preset_summary_text(
     Line::from(format!("Theme: {}", summary.theme)),
     Line::from(format!("Waybar: {}", summary.waybar)),
     Line::from(format!("Walker: {}", summary.walker)),
+    Line::from(format!("Hyprlock: {}", summary.hyprlock)),
     Line::from(format!("Starship: {}", summary.starship)),
   ];
   if !summary.errors.is_empty() {
@@ -2057,11 +2200,15 @@ fn clear_kitty_preview(backend: &PreviewBackend) {
 fn mark_force_clear(
   theme: &mut PickerState,
   waybar: &mut PickerState,
+  walker: &mut PickerState,
+  hyprlock: &mut PickerState,
   starship: &mut PickerState,
   presets: &mut PickerState,
 ) {
   theme.force_clear = true;
   waybar.force_clear = true;
+  walker.force_clear = true;
+  hyprlock.force_clear = true;
   starship.force_clear = true;
   presets.force_clear = true;
 }
@@ -2071,6 +2218,7 @@ fn active_picker_mut<'a>(
   theme: &'a mut PickerState,
   waybar: &'a mut PickerState,
   walker: &'a mut PickerState,
+  hyprlock: &'a mut PickerState,
   starship: &'a mut PickerState,
   presets: &'a mut PickerState,
 ) -> Option<&'a mut PickerState> {
@@ -2078,6 +2226,7 @@ fn active_picker_mut<'a>(
     BrowseTab::Theme => Some(theme),
     BrowseTab::Waybar => Some(waybar),
     BrowseTab::Walker => Some(walker),
+    BrowseTab::Hyprlock => Some(hyprlock),
     BrowseTab::Starship => Some(starship),
     BrowseTab::Presets => Some(presets),
     BrowseTab::Review => None,
@@ -2089,11 +2238,13 @@ fn rebuild_active_filtered(
   theme: &mut PickerState,
   waybar: &mut PickerState,
   walker: &mut PickerState,
+  hyprlock: &mut PickerState,
   starship: &mut PickerState,
   presets: &mut PickerState,
   theme_items: &[OptionItem],
   waybar_items: &[LabeledItem],
   walker_items: &[LabeledItem],
+  hyprlock_items: &[LabeledItem],
   starship_items: &[LabeledItem],
   preset_items: &[PresetItem],
 ) {
@@ -2101,6 +2252,7 @@ fn rebuild_active_filtered(
     BrowseTab::Theme => rebuild_filtered(theme, theme_items),
     BrowseTab::Waybar => rebuild_filtered(waybar, waybar_items),
     BrowseTab::Walker => rebuild_filtered(walker, walker_items),
+    BrowseTab::Hyprlock => rebuild_filtered(hyprlock, hyprlock_items),
     BrowseTab::Starship => rebuild_filtered(starship, starship_items),
     BrowseTab::Presets => rebuild_filtered(presets, preset_items),
     BrowseTab::Review => {}
@@ -2112,9 +2264,10 @@ fn tab_index(tab: BrowseTab) -> usize {
     BrowseTab::Theme => 0,
     BrowseTab::Waybar => 1,
     BrowseTab::Walker => 2,
-    BrowseTab::Starship => 3,
-    BrowseTab::Review => 4,
-    BrowseTab::Presets => 5,
+    BrowseTab::Hyprlock => 3,
+    BrowseTab::Starship => 4,
+    BrowseTab::Review => 5,
+    BrowseTab::Presets => 6,
   }
 }
 
@@ -2123,18 +2276,19 @@ fn tab_from_index(index: usize) -> BrowseTab {
     0 => BrowseTab::Theme,
     1 => BrowseTab::Waybar,
     2 => BrowseTab::Walker,
-    3 => BrowseTab::Starship,
-    4 => BrowseTab::Review,
+    3 => BrowseTab::Hyprlock,
+    4 => BrowseTab::Starship,
+    5 => BrowseTab::Review,
     _ => BrowseTab::Presets,
   }
 }
 
 fn next_tab(tab: BrowseTab) -> BrowseTab {
-  tab_from_index((tab_index(tab) + 1) % 6)
+  tab_from_index((tab_index(tab) + 1) % 7)
 }
 
 fn previous_tab(tab: BrowseTab) -> BrowseTab {
-  tab_from_index((tab_index(tab) + 5) % 6)
+  tab_from_index((tab_index(tab) + 6) % 7)
 }
 
 fn tab_index_from_click(ranges: &[(u16, u16, usize)], column: u16) -> Option<usize> {
@@ -2200,6 +2354,14 @@ fn preset_walker_key(preset: &presets::PresetDefinition) -> Option<(String, Stri
   }
 }
 
+fn preset_hyprlock_key(preset: &presets::PresetDefinition) -> Option<(String, String)> {
+  match &preset.hyprlock {
+    presets::PresetHyprlockValue::None => Some(("none".to_string(), "none".to_string())),
+    presets::PresetHyprlockValue::Auto => Some(("theme".to_string(), "theme".to_string())),
+    presets::PresetHyprlockValue::Named(name) => Some(("named".to_string(), name.clone())),
+  }
+}
+
 fn preset_starship_key(preset: &presets::PresetDefinition) -> Option<(String, String)> {
   match &preset.starship {
     presets::PresetStarshipValue::None => Some(("none".to_string(), "none".to_string())),
@@ -2221,6 +2383,8 @@ fn apply_preset_to_states(
   waybar_state: &mut PickerState,
   walker_items: &mut Vec<LabeledItem>,
   walker_state: &mut PickerState,
+  hyprlock_items: &mut Vec<LabeledItem>,
+  hyprlock_state: &mut PickerState,
   starship_items: &mut Vec<LabeledItem>,
   starship_state: &mut PickerState,
 ) -> Result<()> {
@@ -2243,16 +2407,20 @@ fn apply_preset_to_states(
 
   *waybar_items = build_waybar_items(config, theme_path)?;
   *walker_items = build_walker_items(config, theme_path)?;
+  *hyprlock_items = build_hyprlock_items(config, theme_path)?;
   *starship_items = build_starship_items(config, theme_path)?;
   reset_picker_cache(waybar_state);
   reset_picker_cache(walker_state);
+  reset_picker_cache(hyprlock_state);
   reset_picker_cache(starship_state);
   rebuild_filtered(waybar_state, waybar_items);
   rebuild_filtered(walker_state, walker_items);
+  rebuild_filtered(hyprlock_state, hyprlock_items);
   rebuild_filtered(starship_state, starship_items);
 
   select_item_by_key(waybar_state, waybar_items, preset_waybar_key(&preset));
   select_item_by_key(walker_state, walker_items, preset_walker_key(&preset));
+  select_item_by_key(hyprlock_state, hyprlock_items, preset_hyprlock_key(&preset));
   select_item_by_key(
     starship_state,
     starship_items,
@@ -2260,6 +2428,10 @@ fn apply_preset_to_states(
   );
   ensure_selected(&mut waybar_state.list_state, waybar_state.filtered_indices.len());
   ensure_selected(&mut walker_state.list_state, walker_state.filtered_indices.len());
+  ensure_selected(
+    &mut hyprlock_state.list_state,
+    hyprlock_state.filtered_indices.len(),
+  );
   ensure_selected(
     &mut starship_state.list_state,
     starship_state.filtered_indices.len(),
@@ -2269,14 +2441,17 @@ fn apply_preset_to_states(
 }
 
 fn build_preset_entry_from_selection(
-  config: &ResolvedConfig,
   theme: &str,
   waybar_selection: WaybarSelection,
   walker_selection: WalkerSelection,
+  hyprlock_selection: HyprlockSelection,
   starship_selection: StarshipSelection,
 ) -> presets::PresetEntry {
   let waybar_entry = match waybar_selection {
-    WaybarSelection::UseDefaults => waybar_entry_from_defaults(config),
+    WaybarSelection::NoChange => presets::PresetWaybarEntry {
+      mode: Some("none".to_string()),
+      name: None,
+    },
     WaybarSelection::None => presets::PresetWaybarEntry {
       mode: Some("none".to_string()),
       name: None,
@@ -2292,7 +2467,10 @@ fn build_preset_entry_from_selection(
   };
 
   let walker_entry = match walker_selection {
-    WalkerSelection::UseDefaults => walker_entry_from_defaults(config),
+    WalkerSelection::NoChange => presets::PresetWalkerEntry {
+      mode: Some("none".to_string()),
+      name: None,
+    },
     WalkerSelection::None => presets::PresetWalkerEntry {
       mode: Some("none".to_string()),
       name: None,
@@ -2307,8 +2485,31 @@ fn build_preset_entry_from_selection(
     },
   };
 
+  let hyprlock_entry = match hyprlock_selection {
+    HyprlockSelection::NoChange => presets::PresetHyprlockEntry {
+      mode: Some("none".to_string()),
+      name: None,
+    },
+    HyprlockSelection::None => presets::PresetHyprlockEntry {
+      mode: Some("none".to_string()),
+      name: None,
+    },
+    HyprlockSelection::Auto => presets::PresetHyprlockEntry {
+      mode: Some("auto".to_string()),
+      name: None,
+    },
+    HyprlockSelection::Named(name) => presets::PresetHyprlockEntry {
+      mode: Some("named".to_string()),
+      name: Some(name),
+    },
+  };
+
   let starship_entry = match starship_selection {
-    StarshipSelection::UseDefaults => starship_entry_from_defaults(config),
+    StarshipSelection::NoChange => presets::PresetStarshipEntry {
+      mode: Some("none".to_string()),
+      preset: None,
+      name: None,
+    },
     StarshipSelection::None => presets::PresetStarshipEntry {
       mode: Some("none".to_string()),
       preset: None,
@@ -2335,61 +2536,8 @@ fn build_preset_entry_from_selection(
     theme: Some(theme.to_string()),
     waybar: Some(waybar_entry),
     walker: Some(walker_entry),
+    hyprlock: Some(hyprlock_entry),
     starship: Some(starship_entry),
-  }
-}
-
-fn waybar_entry_from_defaults(config: &ResolvedConfig) -> presets::PresetWaybarEntry {
-  match waybar_from_defaults(config) {
-    (WaybarMode::Auto, _) => presets::PresetWaybarEntry {
-      mode: Some("auto".to_string()),
-      name: None,
-    },
-    (WaybarMode::Named, Some(name)) => presets::PresetWaybarEntry {
-      mode: Some("named".to_string()),
-      name: Some(name),
-    },
-    _ => presets::PresetWaybarEntry {
-      mode: Some("none".to_string()),
-      name: None,
-    },
-  }
-}
-
-fn walker_entry_from_defaults(config: &ResolvedConfig) -> presets::PresetWalkerEntry {
-  match walker_from_defaults(config) {
-    (WalkerMode::Auto, _) => presets::PresetWalkerEntry {
-      mode: Some("auto".to_string()),
-      name: None,
-    },
-    (WalkerMode::Named, Some(name)) => presets::PresetWalkerEntry {
-      mode: Some("named".to_string()),
-      name: Some(name),
-    },
-    _ => presets::PresetWalkerEntry {
-      mode: Some("none".to_string()),
-      name: None,
-    },
-  }
-}
-
-fn starship_entry_from_defaults(config: &ResolvedConfig) -> presets::PresetStarshipEntry {
-  match starship_from_defaults(config) {
-    StarshipMode::Preset { preset } => presets::PresetStarshipEntry {
-      mode: Some("preset".to_string()),
-      preset: Some(preset),
-      name: None,
-    },
-    StarshipMode::Named { name } => presets::PresetStarshipEntry {
-      mode: Some("named".to_string()),
-      preset: None,
-      name: Some(name),
-    },
-    _ => presets::PresetStarshipEntry {
-      mode: Some("none".to_string()),
-      preset: None,
-      name: None,
-    },
   }
 }
 
@@ -2398,14 +2546,10 @@ fn current_waybar_label(items: &[LabeledItem], state: &PickerState) -> String {
     Some(index) => index,
     None => return "No options".to_string(),
   };
-  if items.len() == 1 && items[0].kind == "default" {
-    return "Use defaults".to_string();
-  }
   let item = &items[index];
   match item.kind.as_str() {
-    "default" => "Omarchy default".to_string(),
     "theme" => "Theme waybar".to_string(),
-    "none" => "No waybar changes".to_string(),
+    "none" => "No Waybar change".to_string(),
     _ => item.label.clone(),
   }
 }
@@ -2415,14 +2559,10 @@ fn current_starship_label(items: &[LabeledItem], state: &PickerState) -> String 
     Some(index) => index,
     None => return "No options".to_string(),
   };
-  if items.len() == 1 && items[0].kind == "default" {
-    return "Use defaults".to_string();
-  }
   let item = &items[index];
   match item.kind.as_str() {
-    "default" => "Omarchy default".to_string(),
     "theme" => "Theme starship".to_string(),
-    "none" => "No Starship changes".to_string(),
+    "none" => "No Starship change".to_string(),
     _ => item.label.clone(),
   }
 }
@@ -2430,13 +2570,9 @@ fn current_starship_label(items: &[LabeledItem], state: &PickerState) -> String 
 fn current_waybar_selection(items: &[LabeledItem], state: &PickerState) -> WaybarSelection {
   let index = match selected_item_index(state, items.len()) {
     Some(index) => index,
-    None => return WaybarSelection::UseDefaults,
+    None => return WaybarSelection::NoChange,
   };
-  if items.len() == 1 && items[0].kind == "default" {
-    return WaybarSelection::UseDefaults;
-  }
   match items[index].kind.as_str() {
-    "default" => WaybarSelection::UseDefaults,
     "none" => WaybarSelection::None,
     "theme" => WaybarSelection::Auto,
     _ => WaybarSelection::Named(items[index].value.clone()),
@@ -2448,14 +2584,10 @@ fn current_walker_label(items: &[LabeledItem], state: &PickerState) -> String {
     Some(index) => index,
     None => return "No options".to_string(),
   };
-  if items.len() == 1 && items[0].kind == "default" {
-    return "Use defaults".to_string();
-  }
   let item = &items[index];
   match item.kind.as_str() {
-    "default" => "Omarchy default".to_string(),
     "theme" => "Theme walker".to_string(),
-    "none" => "No walker changes".to_string(),
+    "none" => "No Walker change".to_string(),
     _ => item.label.clone(),
   }
 }
@@ -2463,16 +2595,37 @@ fn current_walker_label(items: &[LabeledItem], state: &PickerState) -> String {
 fn current_walker_selection(items: &[LabeledItem], state: &PickerState) -> WalkerSelection {
   let index = match selected_item_index(state, items.len()) {
     Some(index) => index,
-    None => return WalkerSelection::UseDefaults,
+    None => return WalkerSelection::NoChange,
   };
-  if items.len() == 1 && items[0].kind == "default" {
-    return WalkerSelection::UseDefaults;
-  }
   match items[index].kind.as_str() {
-    "default" => WalkerSelection::UseDefaults,
     "none" => WalkerSelection::None,
     "theme" => WalkerSelection::Auto,
     _ => WalkerSelection::Named(items[index].value.clone()),
+  }
+}
+
+fn current_hyprlock_label(items: &[LabeledItem], state: &PickerState) -> String {
+  let index = match selected_item_index(state, items.len()) {
+    Some(index) => index,
+    None => return "No options".to_string(),
+  };
+  let item = &items[index];
+  match item.kind.as_str() {
+    "theme" => "Theme hyprlock".to_string(),
+    "none" => "No Hyprlock change".to_string(),
+    _ => item.label.clone(),
+  }
+}
+
+fn current_hyprlock_selection(items: &[LabeledItem], state: &PickerState) -> HyprlockSelection {
+  let index = match selected_item_index(state, items.len()) {
+    Some(index) => index,
+    None => return HyprlockSelection::NoChange,
+  };
+  match items[index].kind.as_str() {
+    "none" => HyprlockSelection::None,
+    "theme" => HyprlockSelection::Auto,
+    _ => HyprlockSelection::Named(items[index].value.clone()),
   }
 }
 
@@ -2483,13 +2636,9 @@ fn current_starship_selection(
 ) -> StarshipSelection {
   let index = match selected_item_index(state, items.len()) {
     Some(index) => index,
-    None => return StarshipSelection::UseDefaults,
+    None => return StarshipSelection::NoChange,
   };
-  if items.len() == 1 && items[0].kind == "default" {
-    return StarshipSelection::UseDefaults;
-  }
   match items[index].kind.as_str() {
-    "default" => StarshipSelection::UseDefaults,
     "none" => StarshipSelection::None,
     "theme" => StarshipSelection::Theme(theme_path.join("starship.toml")),
     "preset" => StarshipSelection::Preset(items[index].value.clone()),
@@ -2801,6 +2950,24 @@ fn list_walker_themes(walker_themes_dir: &Path) -> Result<Vec<String>> {
         if name != "theme-manager-auto" {
           entries.push(name.to_string());
         }
+      }
+    }
+  }
+  entries.sort();
+  Ok(entries)
+}
+
+fn list_hyprlock_themes(hyprlock_themes_dir: &Path) -> Result<Vec<String>> {
+  if !hyprlock_themes_dir.is_dir() {
+    return Ok(Vec::new());
+  }
+  let mut entries = Vec::new();
+  for entry in fs::read_dir(hyprlock_themes_dir)? {
+    let entry = entry?;
+    let path = entry.path();
+    if path.is_dir() && path.join("hyprlock.conf").is_file() {
+      if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+        entries.push(name.to_string());
       }
     }
   }
@@ -3130,6 +3297,7 @@ mod tests {
       theme: "noir".to_string(),
       waybar: presets::PresetWaybarValue::None,
       walker: presets::PresetWalkerValue::None,
+      hyprlock: presets::PresetHyprlockValue::None,
       starship: presets::PresetStarshipValue::Theme,
     };
     assert_eq!(
@@ -3138,6 +3306,10 @@ mod tests {
     );
     assert_eq!(
       preset_walker_key(&preset),
+      Some(("none".to_string(), "none".to_string()))
+    );
+    assert_eq!(
+      preset_hyprlock_key(&preset),
       Some(("none".to_string(), "none".to_string()))
     );
     assert_eq!(

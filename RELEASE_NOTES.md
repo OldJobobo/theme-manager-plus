@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+- Walker theme updates now only rewrite the `theme` key in `~/.config/walker/config.toml`.
+- Walker auto mode now reliably replaces `theme-manager-auto` under `~/.config/walker/themes`.
+- New Walker override flags are available across core flows:
+  - `theme-manager set <theme> --walker [name]`
+  - `theme-manager next --walker [name]`
+  - `theme-manager preset save --walker <mode|name>`
+  - `theme-manager preset load <name> --walker [name]`
+- Walker apply paths now call `omarchy-restart-walker` so updates are visible immediately.
+- Browse component tabs now provide explicit no-op choices (`No Waybar change`, `No Walker change`, `No Starship change`) that preserve each component’s current config.
+- Omarchy defaults are now always selectable as named shared themes when available:
+  - Waybar: `~/.config/waybar/themes/omarchy-default`
+  - Walker: `~/.config/walker/themes/omarchy-default`
+  - Starship: `~/.config/starship-themes/omarchy-default.toml`
+- New Hyprlock support is now available with parity to other add-ons:
+  - `theme-manager set/next --hyprlock [name]`
+  - `theme-manager preset save --hyprlock <mode|name>`
+  - `theme-manager preset load ... --hyprlock [name]`
+  - `theme-manager hyprlock <mode>`
+  - TUI `Hyprlock` tab including `No Hyprlock change`
+  - Omarchy default auto-link at `~/.config/hypr/themes/hyprlock/omarchy-default`
+- Hyprlock apply writes to `~/.config/omarchy/current/theme/hyprlock.conf` so it follows Omarchy’s lock-screen source chain.
+- The CLI now warns if `~/.config/hypr/hyprlock.conf` does not source the current theme hyprlock file.
+- Hyprlock compatibility updates:
+  - Style-only Hyprlock themes now use the Omarchy wrapper host layout.
+  - Full-layout Hyprlock themes now use minimal source-only host mode to avoid duplicate password/background widgets.
+  - Custom host `~/.config/hypr/hyprlock.conf` is preserved when it does not source current theme (warning shown).
+  - TUI only shows/injects `omarchy-default` when Omarchy default Hyprlock source is actually discoverable.
+- Version display is now unified through a single repository `VERSION` file so Bash and Rust/TUI stay in sync.
+
 ## 0.2.9
 - Theme-specific Starship configs now look for `starship.toml` (instead of `starship.yaml`).
 

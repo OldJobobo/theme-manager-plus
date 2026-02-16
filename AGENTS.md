@@ -5,7 +5,8 @@
 - `README.md`: user-focused guide (plain-English overview, commands, config, troubleshooting).
 - `DOCSPLAN.md`: documentation roadmap and writing style rules.
 - `CONFIGPLAN.md`: config system scope, keys, and testing checklist.
-- `src/theme-manager.sh`: defines `VERSION` and the `version` command.
+- `VERSION`: single source of truth for user-facing version display (Rust CLI/TUI + Bash CLI).
+- `src/theme-manager.sh`: Bash implementation and `version` command.
 - `bin/theme-manager`: CLI entry point.
 - `extras/omarchy/theme_manager_plus.lua`: Walker/Elephant menu (kept for reference).
 - `install-omarchy-menu.sh`: installs the TUI app launcher via `omarchy-tui-install`.
@@ -46,6 +47,6 @@ Defaults can be set via `./.theme-manager.conf` or `~/.config/theme-manager/conf
 See `config.example` for a fully commented template.
 
 ## Versioning
-Update the `VERSION` constant in `src/theme-manager.sh` when behavior changes. The CLI exposes it via `theme-manager version`.
-Add entries under `## Unreleased` in `CHANGELOG.md` as you make changes, then move them into a new version heading when you bump `VERSION` in `src/theme-manager.sh`.
+Update the repository `VERSION` file when behavior changes. The CLI exposes it via `theme-manager version`.
+Add entries under `## Unreleased` in `CHANGELOG.md` as you make changes, then move them into a new version heading when you bump `VERSION`.
 Add a matching entry to `RELEASE_NOTES.md` for each release. Release notes are user-facing highlights; exclude tests and documentation-only changes.

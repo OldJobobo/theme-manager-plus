@@ -23,7 +23,23 @@ Commands:
 USAGE
 }
 
-VERSION="0.2.9"
+resolve_repo_version() {
+  local source_path="${BASH_SOURCE[0]}"
+  local script_dir
+  script_dir="$(cd "$(dirname "${source_path}")" && pwd)"
+  local version_file="${script_dir}/../VERSION"
+  if [[ -f "${version_file}" ]]; then
+    local version
+    version="$(tr -d '[:space:]' < "${version_file}")"
+    if [[ -n "${version}" ]]; then
+      echo "${version}"
+      return
+    fi
+  fi
+  echo "0.2.9"
+}
+
+VERSION="$(resolve_repo_version)"
 
 theme_root_dir() {
   echo "${THEME_ROOT_DIR:-${HOME}/.config/omarchy/themes}"

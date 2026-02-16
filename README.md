@@ -14,8 +14,10 @@ Think of it as a **direct, expanded interface** for driving Omarchy’s existing
 - Reloads common components (Waybar, terminals, notifications, etc.)
 - Optionally applies:
   - A Waybar theme
+  - A Walker theme
+  - A Hyprlock theme
   - A Starship preset or user theme
-- Supports **presets** (theme + Waybar + Starship bundles)
+- Supports **presets** (theme + Waybar + Walker + Hyprlock + Starship bundles)
 
 ---
 
@@ -77,8 +79,12 @@ curl -fsSL https://raw.githubusercontent.com/OldJobobo/theme-manager-plus/master
 - `theme-manager list` — list available themes
 - `theme-manager set <Theme>` — switch to a theme
 - `theme-manager set <Theme> -w` — switch theme and apply Waybar
-- `theme-manager browse` — interactive selector (theme + Waybar + Starship)
+- `theme-manager set <Theme> -k` — switch theme and apply bundled Walker theme
+- `theme-manager set <Theme> --hyprlock` — switch theme and apply bundled Hyprlock theme
+- `theme-manager browse` — interactive selector (theme + Waybar + Walker + Hyprlock + Starship)
 - `theme-manager waybar <mode>` — apply Waybar only
+- `theme-manager walker <mode>` — apply Walker only
+- `theme-manager hyprlock <mode>` — apply Hyprlock only
 - `theme-manager starship <mode>` — apply Starship only
 - `theme-manager preset save|load|list|remove`
 - `theme-manager version`
@@ -87,12 +93,16 @@ curl -fsSL https://raw.githubusercontent.com/OldJobobo/theme-manager-plus/master
 
 ## Command Reference (Short)
 
-### `set <theme> [-w|--waybar [name]] [-q|--quiet]`
+### `set <theme> [-w|--waybar [name]] [-k|--walker [name]] [--hyprlock [name]] [-q|--quiet]`
 
 Switch themes.
 
 - `-w` (no name): use the theme’s `waybar-theme/` if present
 - `-w <name>`: use `~/.config/waybar/themes/<name>/`
+- `-k` (no name): use the theme’s `walker-theme/` if present
+- `-k <name>`: use `~/.config/walker/themes/<name>/`
+- `--hyprlock` (no name): use the theme’s `hyprlock-theme/` if present
+- `--hyprlock <name>`: use `~/.config/hypr/themes/hyprlock/<name>/`
 - `-q`: suppress external command output
 
 ---
@@ -101,9 +111,10 @@ Switch themes.
 
 Full-screen selector with previews.
 
-- Tabs: **Theme**, **Waybar**, **Starship**, **Presets**, **Review**
+- Tabs: **Theme**, **Waybar**, **Walker**, **Hyprlock**, **Starship**, **Presets**, **Review**
 - Apply with **Ctrl+Enter** by default
 - Includes a **“No theme change”** option
+- Component tabs include **“No Waybar change”**, **“No Walker change”**, **“No Hyprlock change”**, and **“No Starship change”** (leave current config as-is)
 - Supports search and preset saving
 
 ---
@@ -126,19 +137,25 @@ Full-screen selector with previews.
 
 ### `preset save|load|list|remove`
 
-Presets store a **theme + Waybar + Starship** bundle.
+Presets store a **theme + Waybar + Walker + Hyprlock + Starship** bundle.
 
 Save example:
 ```sh
 theme-manager preset save "Daily Driver" \
   --theme noir \
   --waybar auto \
+  --walker auto \
+  --hyprlock auto \
   --starship preset:bracketed-segmented
 ```
 
 Load example:
 ```sh
 theme-manager preset load "Daily Driver" -w
+# or override Walker too:
+theme-manager preset load "Daily Driver" -w -k omarchy-default
+# or override Hyprlock:
+theme-manager preset load "Daily Driver" --hyprlock omarchy-default
 ```
 
 **Precedence:**  
@@ -167,6 +184,28 @@ Modes:
 - `preset:<name>`
 - `named:<name>`
 - `<name>` (named theme if it exists, otherwise preset)
+
+---
+
+### `walker <mode>`
+
+Apply Walker without changing the theme.
+
+Modes:
+- `auto`
+- `none`
+- `<name>` (shared Walker theme)
+
+---
+
+### `hyprlock <mode>`
+
+Apply Hyprlock without changing the theme.
+
+Modes:
+- `auto`
+- `none`
+- `<name>` (shared Hyprlock theme)
 
 ---
 
@@ -236,6 +275,21 @@ Behavior:
 - Files are symlinked into `~/.config/waybar/` by default
 - Set `WAYBAR_APPLY_MODE="copy"` to copy instead
 - Waybar is restarted after apply
+- If Omarchy default Waybar files are found, `omarchy-default` is auto-linked into `~/.config/waybar/themes/`
+
+---
+
+## Walker Integration
+
+Supported sources:
+- Theme-specific: `walker-theme/` (requires `style.css`, optional `layout.xml`)
+- Shared themes: `~/.config/walker/themes/<name>/`
+
+Behavior:
+- Named Walker mode updates `~/.config/walker/config.toml` (`theme = "..."`)
+- Auto mode builds `theme-manager-auto` under `~/.config/walker/themes/`
+- Walker is restarted after apply
+- If Omarchy default Walker files are found, `omarchy-default` is auto-linked into `~/.config/walker/themes/`
 
 ---
 
@@ -250,6 +304,25 @@ Behavior:
 - Active config is written to `~/.config/starship.toml`
 - Presets appear automatically in browse mode
 - Example themes live in `extras/starship-themes/`
+- If Omarchy default Starship files are found, `omarchy-default.toml` is auto-linked into `~/.config/starship-themes/`
+
+---
+
+## Hyprlock Integration
+
+Supported layouts:
+- Theme-specific: `hyprlock-theme/hyprlock.conf`
+- Shared: `~/.config/hypr/themes/hyprlock/<name>/hyprlock.conf`
+
+Behavior:
+- Applied to `~/.config/omarchy/current/theme/hyprlock.conf` by symlink by default (`copy` via config/env)
+- Expects `~/.config/hypr/hyprlock.conf` to source `~/.config/omarchy/current/theme/hyprlock.conf`
+- `No Hyprlock change` leaves current Hyprlock config untouched
+- Host `~/.config/hypr/hyprlock.conf` handling is automatic:
+  - Style-only Hyprlock themes keep/restore the Omarchy wrapper layout.
+  - Full-layout Hyprlock themes use a minimal source-only host config to avoid duplicate widgets.
+  - If host config is custom and does not source current theme, it is preserved and a warning is printed.
+- If Omarchy default Hyprlock files are found, `omarchy-default` is auto-linked into `~/.config/hypr/themes/hyprlock/` and shown in TUI.
 
 ---
 
@@ -261,6 +334,7 @@ Scripts invoked include:
 - `omarchy-theme-bg-next`
 - `omarchy-restart-terminal`
 - `omarchy-restart-waybar`
+- `omarchy-restart-walker`
 - `omarchy-restart-swayosd`
 - `omarchy-theme-set-*`
 - `omarchy-hook theme-set`
@@ -268,7 +342,7 @@ Scripts invoked include:
 ### Order of operations (simplified)
 
 1. Materialize theme and write `theme.name`
-2. Apply Waybar / Starship (if selected)
+2. Apply Waybar / Walker / Hyprlock / Starship (if selected)
 3. Update background
 4. Reload components
 5. Run Omarchy app setters

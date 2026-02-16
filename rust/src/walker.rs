@@ -1,12 +1,17 @@
 use anyhow::Result;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
+use crate::config::ResolvedConfig;
+use crate::omarchy;
 use crate::theme_ops::{CommandContext, WalkerMode};
 
-const WALKER_LINKS_FILE: &str = ".theme-manager-walker-links";
+const AUTO_THEME_NAME: &str = "theme-manager-auto";
+const OMARCHY_DEFAULT_THEME_NAME: &str = "omarchy-default";
 
 pub fn prepare_walker(ctx: &CommandContext<'_>, theme_dir: &Path) -> Result<()> {
+  ensure_omarchy_default_theme_link(ctx.config, ctx.quiet)?;
+
   let (walker_theme_dir, theme_name) = match ctx.walker_mode {
     WalkerMode::None => return Ok(()),
     WalkerMode::Auto => {
@@ -50,7 +55,7 @@ pub fn prepare_walker(ctx: &CommandContext<'_>, theme_dir: &Path) -> Result<()> 
   }
 
   // For auto mode (theme-bundled), we need to copy/link the theme files
-  cleanup_walker_links(&ctx.config.walker_dir, ctx.quiet)?;
+  cleanup_auto_theme_dir(&ctx.config.walker_themes_dir, ctx.quiet)?;
 
   let layout_path = walker_theme_dir.join("layout.xml");
   let apply_mode = ctx.config.walker_apply_mode.as_str();
@@ -59,6 +64,49 @@ pub fn prepare_walker(ctx: &CommandContext<'_>, theme_dir: &Path) -> Result<()> 
   }
 
   apply_symlink(ctx, &walker_theme_dir, &style_path, &layout_path)
+}
+
+pub fn ensure_omarchy_default_theme_link(config: &ResolvedConfig, quiet: bool) -> Result<()> {
+  let Some(default_theme_dir) = omarchy_default_walker_theme_dir(config) else {
+    return Ok(());
+  };
+
+  let link_path = config.walker_themes_dir.join(OMARCHY_DEFAULT_THEME_NAME);
+  if link_path.exists() {
+    return Ok(());
+  }
+
+  fs::create_dir_all(&config.walker_themes_dir)?;
+  #[cfg(unix)]
+  {
+    std::os::unix::fs::symlink(&default_theme_dir, &link_path)?;
+  }
+  #[cfg(not(unix))]
+  {
+    return Ok(());
+  }
+
+  if !quiet {
+    println!(
+      "theme-manager: linked Omarchy default Walker theme {} -> {}",
+      link_path.to_string_lossy(),
+      default_theme_dir.to_string_lossy()
+    );
+  }
+
+  Ok(())
+}
+
+fn omarchy_default_walker_theme_dir(config: &ResolvedConfig) -> Option<PathBuf> {
+  let omarchy_root = omarchy::detect_omarchy_root(config)?;
+  let candidate = omarchy_root
+    .join("default/walker/themes")
+    .join(OMARCHY_DEFAULT_THEME_NAME);
+  if candidate.is_dir() {
+    return Some(candidate);
+  }
+
+  None
 }
 
 fn update_walker_config(ctx: &CommandContext<'_>, theme_name: &str) -> Result<()> {
@@ -76,12 +124,16 @@ fn update_walker_config(ctx: &CommandContext<'_>, theme_name: &str) -> Result<()
   let mut found_theme = false;
 
   for line in content.lines() {
-    if line.trim_start().starts_with("theme") && line.contains('=') {
+    let is_theme_assignment = line
+      .split_once('=')
+      .map(|(lhs, _)| lhs.trim() == "theme")
+      .unwrap_or(false);
+    if is_theme_assignment {
       new_lines.push(format!("theme = \"{}\"", theme_name));
       found_theme = true;
-    } else {
-      new_lines.push(line.to_string());
+      continue;
     }
+    new_lines.push(line.to_string());
   }
 
   if !found_theme {
@@ -105,8 +157,8 @@ fn apply_copy(
   layout_path: &Path,
 ) -> Result<()> {
   // Create a temporary theme directory in walker themes
-  let temp_theme_name = "theme-manager-auto";
-  let dest_theme_dir = ctx.config.walker_themes_dir.join(temp_theme_name);
+  let dest_theme_dir = ctx.config.walker_themes_dir.join(AUTO_THEME_NAME);
+  cleanup_auto_theme_dir(&ctx.config.walker_themes_dir, ctx.quiet)?;
   fs::create_dir_all(&dest_theme_dir)?;
 
   if !ctx.quiet {
@@ -140,7 +192,7 @@ fn apply_copy(
   }
 
   // Update walker config to use this theme
-  update_walker_config(ctx, temp_theme_name)?;
+  update_walker_config(ctx, AUTO_THEME_NAME)?;
 
   Ok(())
 }
@@ -152,13 +204,8 @@ fn apply_symlink(
   layout_path: &Path,
 ) -> Result<()> {
   // Create a temporary theme directory in walker themes with symlinks
-  let temp_theme_name = "theme-manager-auto";
-  let dest_theme_dir = ctx.config.walker_themes_dir.join(temp_theme_name);
-
-  // Remove old auto theme if it exists
-  if dest_theme_dir.exists() {
-    fs::remove_dir_all(&dest_theme_dir)?;
-  }
+  let dest_theme_dir = ctx.config.walker_themes_dir.join(AUTO_THEME_NAME);
+  cleanup_auto_theme_dir(&ctx.config.walker_themes_dir, ctx.quiet)?;
   fs::create_dir_all(&dest_theme_dir)?;
 
   if !ctx.quiet {
@@ -192,41 +239,27 @@ fn apply_symlink(
   }
 
   // Update walker config to use this theme
-  update_walker_config(ctx, temp_theme_name)?;
-
-  // Record that we created this theme dir for cleanup
-  let manifest_path = ctx.config.walker_dir.join(WALKER_LINKS_FILE);
-  fs::write(&manifest_path, temp_theme_name)?;
+  update_walker_config(ctx, AUTO_THEME_NAME)?;
 
   Ok(())
 }
 
-fn cleanup_walker_links(walker_dir: &Path, quiet: bool) -> Result<()> {
-  let manifest_path = walker_dir.join(WALKER_LINKS_FILE);
-  if !manifest_path.is_file() {
+fn cleanup_auto_theme_dir(walker_themes_dir: &Path, quiet: bool) -> Result<()> {
+  let auto_theme_dir = walker_themes_dir.join(AUTO_THEME_NAME);
+  if !auto_theme_dir.exists() {
     return Ok(());
   }
 
-  let content = fs::read_to_string(&manifest_path)?;
-  for line in content.lines() {
-    let name = line.trim();
-    if name.is_empty() {
-      continue;
-    }
-    let path = walker_dir.join(name);
-    let meta = match fs::symlink_metadata(&path) {
-      Ok(meta) => meta,
-      Err(_) => continue,
-    };
-    if !meta.file_type().is_symlink() {
-      continue;
-    }
-    if !quiet {
-      println!("theme-manager: removing walker link {}", path.to_string_lossy());
-    }
-    let _ = fs::remove_file(&path);
+  if !quiet {
+    println!(
+      "theme-manager: removing stale walker auto theme {}",
+      auto_theme_dir.to_string_lossy()
+    );
   }
-
-  let _ = fs::remove_file(&manifest_path);
+  if auto_theme_dir.is_dir() {
+    fs::remove_dir_all(&auto_theme_dir)?;
+  } else {
+    fs::remove_file(&auto_theme_dir)?;
+  }
   Ok(())
 }

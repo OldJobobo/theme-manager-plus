@@ -17,6 +17,13 @@ pub fn setup_env() -> TestEnv {
   fs::create_dir_all(&home).expect("home dir");
   let bin = temp.path().join("bin");
   fs::create_dir_all(&bin).expect("bin dir");
+  // Safety guard: never let tests spawn the user's live Waybar session.
+  write_stub_ok(&bin.join("waybar"));
+  write_stub_ok(&bin.join("uwsm-app"));
+  // Safety guard: never emit desktop notifications or wallpaper transitions.
+  write_stub_ok(&bin.join("notify-send"));
+  write_stub_ok(&bin.join("awww"));
+  write_stub_ok(&bin.join("awww-daemon"));
   TestEnv { temp, home, bin }
 }
 
@@ -25,6 +32,10 @@ pub fn cmd_with_env(env: &TestEnv) -> Command {
   cmd.env("HOME", &env.home);
   cmd.env("THEME_MANAGER_SKIP_APPS", "1");
   cmd.env("THEME_MANAGER_SKIP_HOOK", "1");
+  cmd.env("THEME_MANAGER_AWWW_TRANSITION", "0");
+  // Prevent host Omarchy env leakage from prepending real command paths.
+  cmd.env_remove("OMARCHY_PATH");
+  cmd.env_remove("OMARCHY_BIN_DIR");
   cmd.env("PATH", format!("{}:/usr/bin:/bin", env.bin.display()));
   cmd
 }
@@ -51,6 +62,8 @@ pub fn write_stub_ok(path: &Path) {
 pub fn add_omarchy_stubs(bin: &Path) {
   let cmds = [
     "omarchy-restart-waybar",
+    "omarchy-restart-walker",
+    "omarchy-restart-hyprlock",
     "omarchy-restart-terminal",
     "omarchy-restart-swayosd",
     "omarchy-theme-bg-next",

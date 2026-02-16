@@ -166,3 +166,17 @@ fn set_rejects_empty_waybar_name() {
     .failure()
     .stderr(predicates::str::contains("--waybar requires a name"));
 }
+
+#[test]
+fn set_rejects_empty_hyprlock_name() {
+  let env = setup_env();
+  let themes = omarchy_dir(&env.home).join("themes");
+  fs::create_dir_all(themes.join("theme-a")).unwrap();
+
+  let mut cmd = cmd_with_env(&env);
+  cmd.args(["set", "theme-a", "--hyprlock="]);
+  cmd
+    .assert()
+    .failure()
+    .stderr(predicates::str::contains("--hyprlock requires a name"));
+}
