@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Result};
+use std::env;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread;
@@ -22,6 +23,23 @@ pub enum RestartAction {
 
 pub fn command_exists(cmd: &str) -> bool {
   which::which(cmd).is_ok()
+}
+
+pub fn detect_omarchy_root(config: &ResolvedConfig) -> Option<PathBuf> {
+  if let Ok(path) = env::var("OMARCHY_PATH") {
+    let trimmed = path.trim();
+    if !trimmed.is_empty() {
+      return Some(PathBuf::from(trimmed));
+    }
+  }
+  if let Some(bin_dir) = &config.omarchy_bin_dir {
+    if let Some(parent) = bin_dir.parent() {
+      return Some(parent.to_path_buf());
+    }
+  }
+  env::var("HOME")
+    .ok()
+    .map(|home| PathBuf::from(home).join(".local/share/omarchy"))
 }
 
 fn awww_daemon_running() -> bool {
@@ -100,6 +118,8 @@ pub fn reload_components(
 ) -> Result<()> {
   run_optional("omarchy-restart-terminal", &[], quiet)?;
   restart_waybar_only(quiet, waybar_restart, waybar_restart_logs)?;
+  restart_walker_only(quiet)?;
+  restart_hyprlock_only(quiet)?;
   restart_swayosd(quiet)?;
   run_optional("hyprctl", &["reload"], quiet)?;
   run_optional("makoctl", &["reload"], quiet)?;
@@ -107,6 +127,21 @@ pub fn reload_components(
     let _ = run_command("pkill", &["-SIGUSR2", "btop"], true);
   }
   Ok(())
+}
+
+pub fn restart_walker_only(quiet: bool) -> Result<()> {
+  if command_exists("pkill") {
+    let _ = run_command("pkill", &["-f", "walker --gapplication-service"], true);
+    let _ = run_command("pkill", &["-x", "walker"], true);
+  }
+  run_optional("omarchy-restart-walker", &[], quiet)
+}
+
+pub fn restart_hyprlock_only(quiet: bool) -> Result<()> {
+  if command_exists("pkill") {
+    let _ = run_command("pkill", &["-x", "hyprlock"], true);
+  }
+  run_optional("omarchy-restart-hyprlock", &[], quiet)
 }
 
 pub fn restart_waybar_only(

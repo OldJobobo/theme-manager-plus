@@ -9,6 +9,7 @@ pub struct FileConfig {
   pub paths: Option<PathsConfig>,
   pub waybar: Option<WaybarConfig>,
   pub walker: Option<WalkerConfig>,
+  pub hyprlock: Option<HyprlockConfig>,
   pub starship: Option<StarshipConfig>,
   pub tui: Option<TuiConfig>,
   pub behavior: Option<BehaviorConfig>,
@@ -24,6 +25,8 @@ pub struct PathsConfig {
   pub waybar_themes_dir: Option<String>,
   pub walker_dir: Option<String>,
   pub walker_themes_dir: Option<String>,
+  pub hyprlock_dir: Option<String>,
+  pub hyprlock_themes_dir: Option<String>,
   pub starship_config: Option<String>,
   pub starship_themes_dir: Option<String>,
 }
@@ -39,6 +42,13 @@ pub struct WaybarConfig {
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct WalkerConfig {
+  pub apply_mode: Option<String>,
+  pub default_mode: Option<String>,
+  pub default_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct HyprlockConfig {
   pub apply_mode: Option<String>,
   pub default_mode: Option<String>,
   pub default_name: Option<String>,
@@ -88,6 +98,11 @@ pub struct ResolvedConfig {
   pub walker_apply_mode: String,
   pub default_walker_mode: Option<String>,
   pub default_walker_name: Option<String>,
+  pub hyprlock_dir: PathBuf,
+  pub hyprlock_themes_dir: PathBuf,
+  pub hyprlock_apply_mode: String,
+  pub default_hyprlock_mode: Option<String>,
+  pub default_hyprlock_name: Option<String>,
   pub starship_config: PathBuf,
   pub starship_themes_dir: PathBuf,
   pub default_starship_mode: Option<String>,
@@ -133,6 +148,8 @@ impl ResolvedConfig {
     let waybar_themes_dir = waybar_dir.join("themes");
     let walker_dir = home.join(".config/walker");
     let walker_themes_dir = walker_dir.join("themes");
+    let hyprlock_dir = home.join(".config/hypr");
+    let hyprlock_themes_dir = hyprlock_dir.join("themes/hyprlock");
     let starship_config = home.join(".config/starship.toml");
     let starship_themes_dir = home.join(".config/starship-themes");
 
@@ -157,6 +174,11 @@ impl ResolvedConfig {
       walker_apply_mode: "symlink".to_string(),
       default_walker_mode: None,
       default_walker_name: None,
+      hyprlock_dir,
+      hyprlock_themes_dir,
+      hyprlock_apply_mode: "symlink".to_string(),
+      default_hyprlock_mode: None,
+      default_hyprlock_name: None,
       starship_config,
       starship_themes_dir,
       default_starship_mode: None,
@@ -206,6 +228,14 @@ impl ResolvedConfig {
       } else {
         self.walker_themes_dir = self.walker_dir.join("themes");
       }
+      if let Some(val) = &paths.hyprlock_dir {
+        self.hyprlock_dir = expand_path(val, home);
+      }
+      if let Some(val) = &paths.hyprlock_themes_dir {
+        self.hyprlock_themes_dir = expand_path(val, home);
+      } else {
+        self.hyprlock_themes_dir = self.hyprlock_dir.join("themes/hyprlock");
+      }
       if let Some(val) = &paths.starship_config {
         self.starship_config = expand_path(val, home);
       }
@@ -253,6 +283,18 @@ impl ResolvedConfig {
       }
       if let Some(val) = &walker.default_name {
         self.default_walker_name = Some(val.clone());
+      }
+    }
+
+    if let Some(hyprlock) = &cfg.hyprlock {
+      if let Some(val) = &hyprlock.apply_mode {
+        self.hyprlock_apply_mode = val.clone();
+      }
+      if let Some(val) = &hyprlock.default_mode {
+        self.default_hyprlock_mode = Some(val.clone());
+      }
+      if let Some(val) = &hyprlock.default_name {
+        self.default_hyprlock_name = Some(val.clone());
       }
     }
 
@@ -330,6 +372,21 @@ impl ResolvedConfig {
     }
     if let Ok(val) = env::var("WALKER_THEMES_DIR") {
       self.walker_themes_dir = expand_path(&val, home);
+    }
+    if let Ok(val) = env::var("HYPRLOCK_DIR") {
+      self.hyprlock_dir = expand_path(&val, home);
+    }
+    if let Ok(val) = env::var("HYPRLOCK_THEMES_DIR") {
+      self.hyprlock_themes_dir = expand_path(&val, home);
+    }
+    if let Ok(val) = env::var("HYPRLOCK_APPLY_MODE") {
+      self.hyprlock_apply_mode = val;
+    }
+    if let Ok(val) = env::var("DEFAULT_HYPRLOCK_MODE") {
+      self.default_hyprlock_mode = Some(val);
+    }
+    if let Ok(val) = env::var("DEFAULT_HYPRLOCK_NAME") {
+      self.default_hyprlock_name = Some(val);
     }
     if let Ok(val) = env::var("WALKER_APPLY_MODE") {
       self.walker_apply_mode = val;
@@ -494,6 +551,20 @@ pub fn print_config(config: &ResolvedConfig) {
   println!(
     "DEFAULT_WALKER_NAME={}",
     config.default_walker_name.as_deref().unwrap_or("")
+  );
+  println!("HYPRLOCK_DIR={}", config.hyprlock_dir.to_string_lossy());
+  println!(
+    "HYPRLOCK_THEMES_DIR={}",
+    config.hyprlock_themes_dir.to_string_lossy()
+  );
+  println!("HYPRLOCK_APPLY_MODE={}", config.hyprlock_apply_mode);
+  println!(
+    "DEFAULT_HYPRLOCK_MODE={}",
+    config.default_hyprlock_mode.as_deref().unwrap_or("")
+  );
+  println!(
+    "DEFAULT_HYPRLOCK_NAME={}",
+    config.default_hyprlock_name.as_deref().unwrap_or("")
   );
   println!(
     "STARSHIP_CONFIG={}",
