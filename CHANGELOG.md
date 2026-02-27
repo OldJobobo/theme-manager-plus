@@ -9,6 +9,10 @@ All notable changes to this project are documented in this file.
   - deleted Bash config samples (`config.example`, `./.theme-manager.conf`)
   - deleted legacy Bats tests under `tests/`
 - Updated repository docs and contributor guidelines to reflect Rust-only CLI/TUI workflows.
+- Unified Omarchy default component resolution for Waybar/Walker/Hyprlock/Starship through a shared resolver:
+  - standardized cross-module fallback precedence and validation checks
+  - repaired stale `omarchy-default` symlinks automatically when targets drift
+  - added regression coverage for precedence and missing-default behavior
 
 ## 0.3.0
 

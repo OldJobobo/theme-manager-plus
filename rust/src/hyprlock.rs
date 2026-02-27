@@ -1,9 +1,11 @@
 use anyhow::Result;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::config::ResolvedConfig;
 use crate::omarchy;
+use crate::omarchy_defaults;
+use crate::omarchy_defaults::SymlinkEnsureResult;
 use crate::paths::current_theme_name;
 use crate::theme_ops::{CommandContext, HyprlockMode};
 
@@ -133,7 +135,7 @@ fn ensure_main_hyprlock_mode(ctx: &CommandContext<'_>, source_config: &Path) -> 
 }
 
 pub fn omarchy_default_theme_available(config: &ResolvedConfig) -> bool {
-  omarchy_default_hyprlock_theme_dir(config).is_some()
+  omarchy_defaults::resolve_hyprlock_default(config).is_some()
 }
 
 fn is_style_only_hyprlock_config(path: &Path) -> Result<bool> {
@@ -151,68 +153,41 @@ fn omarchy_base_hyprlock_wrapper(config: &ResolvedConfig) -> Option<String> {
 }
 
 pub fn ensure_omarchy_default_theme_link(config: &ResolvedConfig, quiet: bool) -> Result<()> {
-  let Some(default_theme_dir) = omarchy_default_hyprlock_theme_dir(config) else {
+  let Some(default_theme_dir) = omarchy_defaults::resolve_hyprlock_default(config).map(|d| d.path) else {
     return Ok(());
   };
 
   let link_path = config.hyprlock_themes_dir.join(OMARCHY_DEFAULT_THEME_NAME);
-  if link_path.exists() {
-    return Ok(());
-  }
-
-  fs::create_dir_all(&config.hyprlock_themes_dir)?;
-  #[cfg(unix)]
-  {
-    std::os::unix::fs::symlink(&default_theme_dir, &link_path)?;
-  }
-  #[cfg(not(unix))]
-  {
-    return Ok(());
-  }
-
-  if !quiet {
-    println!(
-      "theme-manager: linked Omarchy default Hyprlock theme {} -> {}",
-      link_path.to_string_lossy(),
-      default_theme_dir.to_string_lossy()
-    );
+  match omarchy_defaults::ensure_symlink(&link_path, &default_theme_dir)? {
+    SymlinkEnsureResult::Created => {
+      if !quiet {
+        println!(
+          "theme-manager: linked Omarchy default Hyprlock theme {} -> {}",
+          link_path.to_string_lossy(),
+          default_theme_dir.to_string_lossy()
+        );
+      }
+    }
+    SymlinkEnsureResult::Updated => {
+      if !quiet {
+        println!(
+          "theme-manager: repaired Omarchy default Hyprlock theme link {} -> {}",
+          link_path.to_string_lossy(),
+          default_theme_dir.to_string_lossy()
+        );
+      }
+    }
+    SymlinkEnsureResult::SkippedNonSymlink => {
+      if !quiet {
+        eprintln!(
+          "theme-manager: warning: preserving non-symlink path {}; cannot link Omarchy default Hyprlock theme",
+          link_path.to_string_lossy()
+        );
+      }
+    }
+    SymlinkEnsureResult::Unchanged => {}
   }
   Ok(())
-}
-
-fn omarchy_default_hyprlock_theme_dir(config: &ResolvedConfig) -> Option<PathBuf> {
-  let mut candidates = Vec::new();
-
-  if let Some(omarchy_root) = omarchy::detect_omarchy_root(config) {
-    candidates.push(
-      omarchy_root
-        .join("default/hyprlock/themes")
-        .join(OMARCHY_DEFAULT_THEME_NAME),
-    );
-    candidates.push(omarchy_root.join("default/hyprlock"));
-    candidates.push(omarchy_root.join("themes").join(OMARCHY_DEFAULT_THEME_NAME));
-    candidates.push(omarchy_root.join("config/hypr"));
-  }
-
-  if let Ok(home) = std::env::var("HOME") {
-    let home = PathBuf::from(home);
-    candidates.push(
-      home
-        .join(".config/omarchy/default/hyprlock/themes")
-        .join(OMARCHY_DEFAULT_THEME_NAME),
-    );
-    candidates.push(home.join(".config/omarchy/default/hyprlock"));
-    candidates.push(
-      home
-        .join(".config/omarchy/themes")
-        .join(OMARCHY_DEFAULT_THEME_NAME),
-    );
-    candidates.push(home.join(".config/omarchy/config/hypr"));
-  }
-
-  candidates
-    .into_iter()
-    .find(|candidate| candidate.join("hyprlock.conf").is_file())
 }
 
 fn apply_copy(ctx: &CommandContext<'_>, source_config: &Path) -> Result<()> {

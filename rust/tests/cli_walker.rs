@@ -343,3 +343,115 @@ default_name = "omarchy-default"
   let config_content = fs::read_to_string(walker_dir.join("config.toml")).unwrap();
   assert!(config_content.contains("theme = \"omarchy-default\""));
 }
+
+#[test]
+fn walker_links_omarchy_default_from_base_default_walker_dir() {
+  let env = setup_env();
+  add_omarchy_stubs(&env.bin);
+  let themes = omarchy_dir(&env.home).join("themes");
+  fs::create_dir_all(themes.join("theme-a")).unwrap();
+
+  let omarchy_default = env.home.join(".local/share/omarchy/default/walker");
+  fs::create_dir_all(&omarchy_default).unwrap();
+  fs::write(omarchy_default.join("style.css"), "default-style").unwrap();
+
+  let walker_dir = env.home.join(".config/walker");
+  fs::create_dir_all(&walker_dir).unwrap();
+  fs::write(walker_dir.join("config.toml"), "theme = \"old\"\n").unwrap();
+
+  let cfg_dir = env.home.join(".config/theme-manager");
+  fs::create_dir_all(&cfg_dir).unwrap();
+  write_toml(
+    &cfg_dir.join("config.toml"),
+    r#"[walker]
+default_mode = "named"
+default_name = "omarchy-default"
+"#,
+  );
+
+  let mut cmd = cmd_with_env(&env);
+  cmd.env_remove("THEME_MANAGER_SKIP_APPS");
+  cmd.args(["set", "theme-a"]);
+  cmd.assert().success();
+
+  let link_path = walker_dir.join("themes/omarchy-default");
+  let meta = fs::symlink_metadata(&link_path).unwrap();
+  assert!(meta.file_type().is_symlink());
+  let target = fs::read_link(&link_path).unwrap();
+  assert_eq!(target, omarchy_default);
+}
+
+#[test]
+fn walker_prefers_named_default_over_base_default() {
+  let env = setup_env();
+  add_omarchy_stubs(&env.bin);
+  let themes = omarchy_dir(&env.home).join("themes");
+  fs::create_dir_all(themes.join("theme-a")).unwrap();
+
+  let base_default = env.home.join(".local/share/omarchy/default/walker");
+  fs::create_dir_all(&base_default).unwrap();
+  fs::write(base_default.join("style.css"), "base-style").unwrap();
+
+  let named_default = env
+    .home
+    .join(".local/share/omarchy/default/walker/themes/omarchy-default");
+  fs::create_dir_all(&named_default).unwrap();
+  fs::write(named_default.join("style.css"), "named-style").unwrap();
+
+  let walker_dir = env.home.join(".config/walker");
+  fs::create_dir_all(&walker_dir).unwrap();
+  fs::write(walker_dir.join("config.toml"), "theme = \"old\"\n").unwrap();
+
+  let cfg_dir = env.home.join(".config/theme-manager");
+  fs::create_dir_all(&cfg_dir).unwrap();
+  write_toml(
+    &cfg_dir.join("config.toml"),
+    r#"[walker]
+default_mode = "named"
+default_name = "omarchy-default"
+"#,
+  );
+
+  let mut cmd = cmd_with_env(&env);
+  cmd.env_remove("THEME_MANAGER_SKIP_APPS");
+  cmd.args(["set", "theme-a"]);
+  cmd.assert().success();
+
+  let link_path = walker_dir.join("themes/omarchy-default");
+  let target = fs::read_link(&link_path).unwrap();
+  assert_eq!(target, named_default);
+}
+
+#[test]
+fn walker_missing_default_style_does_not_create_default_link() {
+  let env = setup_env();
+  add_omarchy_stubs(&env.bin);
+  let themes = omarchy_dir(&env.home).join("themes");
+  fs::create_dir_all(themes.join("theme-a")).unwrap();
+
+  let invalid_base = env.home.join(".local/share/omarchy/default/walker");
+  fs::create_dir_all(&invalid_base).unwrap();
+  fs::write(invalid_base.join("layout.xml"), "<layout/>").unwrap();
+
+  let walker_dir = env.home.join(".config/walker");
+  fs::create_dir_all(&walker_dir).unwrap();
+  fs::write(walker_dir.join("config.toml"), "theme = \"old\"\n").unwrap();
+
+  let cfg_dir = env.home.join(".config/theme-manager");
+  fs::create_dir_all(&cfg_dir).unwrap();
+  write_toml(
+    &cfg_dir.join("config.toml"),
+    r#"[walker]
+default_mode = "named"
+default_name = "omarchy-default"
+"#,
+  );
+
+  let mut cmd = cmd_with_env(&env);
+  cmd.env_remove("THEME_MANAGER_SKIP_APPS");
+  cmd.args(["set", "theme-a"]);
+  cmd.assert().success();
+
+  let link_path = walker_dir.join("themes/omarchy-default");
+  assert!(!link_path.exists());
+}

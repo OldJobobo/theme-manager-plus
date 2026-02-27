@@ -6,6 +6,7 @@ pub mod config;
 pub mod git_ops;
 pub mod hyprlock;
 pub mod omarchy;
+pub mod omarchy_defaults;
 pub mod paths;
 pub mod presets;
 pub mod preview;

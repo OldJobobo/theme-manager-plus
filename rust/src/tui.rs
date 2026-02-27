@@ -109,6 +109,7 @@ struct PickerState {
   last_preview: Option<PathBuf>,
   preview_dirty: bool,
   last_preview_text: Text<'static>,
+  last_image_area: Option<Rect>,
   code_scroll: u16,
   focus: FocusArea,
   image_visible: bool,
@@ -130,7 +131,8 @@ impl PickerState {
       last_preview_index: None,
       last_preview: None,
       preview_dirty: false,
-      last_preview_text: Text::from(""),
+      last_preview_text: Text::default(),
+      last_image_area: None,
       code_scroll: 0,
       focus: FocusArea::List,
       image_visible: false,
@@ -182,7 +184,6 @@ impl PreviewBackend {
               "--clear",
               "--transfer-mode=stream",
               "--stdin=no",
-              "--scale-up",
               "--place",
               &place,
               path.to_string_lossy().as_ref(),
@@ -798,6 +799,15 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                 Ok(()) => {
                   status_message = "Preset loaded".to_string();
                   tab = BrowseTab::Review;
+                  clear_kitty_preview(&backend);
+                  mark_force_clear(
+                    &mut theme_state,
+                    &mut waybar_state,
+                    &mut walker_state,
+                    &mut hyprlock_state,
+                    &mut starship_state,
+                    &mut preset_state,
+                  );
                 }
                 Err(err) => {
                   status_message = err.to_string();
@@ -821,6 +831,17 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
               BrowseTab::Review => String::new(),
             };
             tab = next_tab(tab);
+            if tab == BrowseTab::Review {
+              clear_kitty_preview(&backend);
+              mark_force_clear(
+                &mut theme_state,
+                &mut waybar_state,
+                &mut walker_state,
+                &mut hyprlock_state,
+                &mut starship_state,
+                &mut preset_state,
+              );
+            }
             let items_len = match tab {
               BrowseTab::Theme => theme_state.filtered_indices.len(),
               BrowseTab::Waybar => waybar_state.filtered_indices.len(),
@@ -1170,10 +1191,12 @@ fn build_waybar_items(config: &ResolvedConfig, theme_path: &Path) -> Result<Vec<
     ));
   }
 
-  for name in list_waybar_themes(&config.waybar_themes_dir)? {
+  let mut names = list_waybar_themes(&config.waybar_themes_dir)?;
+  pin_omarchy_default_first(&mut names);
+  for name in names {
     let preview_path = preview::find_waybar_preview(&config.waybar_themes_dir.join(&name));
     items.push(OptionItem::with_kind(
-      name.clone(),
+      display_theme_name(&name),
       name,
       "named",
       preview_path,
@@ -1212,9 +1235,11 @@ fn build_starship_items(config: &ResolvedConfig, theme_path: &Path) -> Result<Ve
     ));
   }
 
-  for theme in list_starship_themes(&config.starship_themes_dir)? {
+  let mut themes = list_starship_themes(&config.starship_themes_dir)?;
+  pin_omarchy_default_first(&mut themes);
+  for theme in themes {
     items.push(OptionItem::with_kind(
-      format!("Theme: {theme}"),
+      format!("Theme: {}", display_theme_name(&theme)),
       theme,
       "named",
       None,
@@ -1258,10 +1283,12 @@ fn build_walker_items(config: &ResolvedConfig, theme_path: &Path) -> Result<Vec<
     ));
   }
 
-  for name in list_walker_themes(&config.walker_themes_dir)? {
+  let mut names = list_walker_themes(&config.walker_themes_dir)?;
+  pin_omarchy_default_first(&mut names);
+  for name in names {
     let preview_path = crate::preview::find_walker_preview(&config.walker_themes_dir.join(&name));
     items.push(OptionItem::with_kind(
-      name.clone(),
+      display_theme_name(&name),
       name,
       "named",
       preview_path,
@@ -1296,13 +1323,13 @@ fn build_hyprlock_items(config: &ResolvedConfig, theme_path: &Path) -> Result<Ve
   let mut names = list_hyprlock_themes(&config.hyprlock_themes_dir)?;
   if hyprlock::omarchy_default_theme_available(config) && !names.iter().any(|name| name == "omarchy-default") {
     names.push("omarchy-default".to_string());
-    names.sort();
   }
+  pin_omarchy_default_first(&mut names);
 
   for name in names {
     let preview_path = preview::find_theme_preview(&config.hyprlock_themes_dir.join(&name));
     items.push(OptionItem::with_kind(
-      name.clone(),
+      display_theme_name(&name),
       name,
       "named",
       preview_path,
@@ -1680,6 +1707,40 @@ struct PickerAreas {
   code_area: Rect,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PreviewAction {
+  None,
+  Clear,
+  Render,
+  ClearAndRender,
+}
+
+fn decide_preview_action(wants_image: bool, image_visible: bool, invalidate: bool) -> PreviewAction {
+  if wants_image {
+    if invalidate || !image_visible {
+      if image_visible {
+        PreviewAction::ClearAndRender
+      } else {
+        PreviewAction::Render
+      }
+    } else {
+      PreviewAction::None
+    }
+  } else if image_visible || invalidate {
+    PreviewAction::Clear
+  } else {
+    PreviewAction::None
+  }
+}
+
+fn text_is_blank(text: &Text<'_>) -> bool {
+  text.lines.is_empty() || text.lines.iter().all(|line| line.width() == 0)
+}
+
+fn preview_debug_enabled() -> bool {
+  std::env::var("THEME_MANAGER_DEBUG_PREVIEW").is_ok()
+}
+
 fn render_picker<T: ItemView>(
   frame: &mut Frame,
   area: Rect,
@@ -1755,6 +1816,8 @@ fn render_picker<T: ItemView>(
   let selected = selected_index(&state.list_state, state.filtered_indices.len());
   let selected_item = state.filtered_indices.get(selected).copied();
   let preview_path = selected_item.and_then(|idx| image_preview(idx));
+  let previous_preview_index = state.last_preview_index;
+  let previous_preview_path = state.last_preview.clone();
 
   if let Some(item_index) = selected_item {
     state.last_selected = Some(item_index);
@@ -1765,11 +1828,7 @@ fn render_picker<T: ItemView>(
     }
   } else {
     state.last_code = Text::from("No matches.");
-    state.last_preview_text = Text::from("No matches.");
-    state.last_preview = None;
-    state.preview_dirty = true;
     state.last_code_index = None;
-    state.last_preview_index = None;
   }
 
   let max_scroll = state
@@ -1795,42 +1854,63 @@ fn render_picker<T: ItemView>(
   frame.render_widget(code, code_area);
 
   if let Some(item_index) = selected_item {
-    if Some(item_index) != state.last_preview_index {
       if let Some(text) = preview_text(item_index) {
         state.last_preview_text = text;
-        if state.last_preview.is_some() {
-          state.preview_dirty = true;
-        }
         state.last_preview = None;
       } else {
-        state.last_preview_text = Text::from("");
-        if state.last_preview != preview_path {
-          state.last_preview = preview_path.clone();
-          state.preview_dirty = true;
-        }
+        state.last_preview_text = Text::default();
+        state.last_preview = preview_path.clone();
       }
-      state.last_preview_index = Some(item_index);
+    state.last_preview_index = Some(item_index);
+  } else {
+    state.last_preview_text = Text::from("No matches.");
+    state.last_preview = None;
+    state.last_preview_index = None;
+  }
+
+  let selection_changed = previous_preview_index != state.last_preview_index;
+  let path_changed = previous_preview_path != state.last_preview;
+  let rect_changed = state.last_image_area != Some(image_area);
+  state.last_image_area = Some(image_area);
+  let invalidate = state.force_clear || state.preview_dirty || selection_changed || path_changed || rect_changed;
+  let wants_image = text_is_blank(&state.last_preview_text) && state.last_preview.is_some();
+  let action = decide_preview_action(wants_image, state.image_visible, invalidate);
+  if preview_debug_enabled() {
+    eprintln!(
+      "theme-manager: preview {:?} tab={} sel={:?} path={:?} rect={}x{}@{}x{} invalidate={} visible={} wants_image={}",
+      action,
+      title,
+      state.last_preview_index,
+      state.last_preview.as_ref().map(|p| p.to_string_lossy().to_string()),
+      image_area.width,
+      image_area.height,
+      image_area.x,
+      image_area.y,
+      invalidate,
+      state.image_visible,
+      wants_image
+    );
+  }
+  match action {
+    PreviewAction::None => {}
+    PreviewAction::Clear => {
+      backend.render(None, image_area);
+      state.image_visible = false;
+    }
+    PreviewAction::Render => {
+      backend.render(state.last_preview.as_deref(), image_area);
+      state.image_visible = wants_image;
+    }
+    PreviewAction::ClearAndRender => {
+      backend.render(None, image_area);
+      backend.render(state.last_preview.as_deref(), image_area);
+      state.image_visible = wants_image;
     }
   }
+  state.force_clear = false;
+  state.preview_dirty = false;
 
-  if state.force_clear {
-    backend.render(None, image_area);
-    state.image_visible = false;
-    state.force_clear = false;
-  }
-
-  let wants_image = state.last_preview_text.lines.is_empty() && state.last_preview.is_some();
-  let should_render = state.preview_dirty || (wants_image && !state.image_visible);
-  if should_render {
-    backend.render(state.last_preview.as_deref(), image_area);
-    state.image_visible = wants_image;
-    state.preview_dirty = false;
-  } else if !wants_image && state.image_visible {
-    backend.render(None, image_area);
-    state.image_visible = false;
-  }
-
-  let preview_text_rendered = if state.last_preview_text.lines.is_empty() {
+  let preview_text_rendered = if text_is_blank(&state.last_preview_text) {
     backend.text_preview(state.last_preview.as_deref(), image_area)
   } else {
     state.last_preview_text.clone()
@@ -2647,7 +2727,8 @@ fn reset_picker_cache(state: &mut PickerState) {
   state.last_preview_index = None;
   state.last_preview = None;
   state.preview_dirty = false;
-  state.last_preview_text = Text::from("");
+  state.last_preview_text = Text::default();
+  state.last_image_area = None;
   state.code_scroll = 0;
   state.image_visible = false;
   state.force_clear = true;
@@ -2987,6 +3068,24 @@ fn list_starship_themes(dir: &Path) -> Result<Vec<String>> {
   Ok(themes)
 }
 
+fn display_theme_name(name: &str) -> String {
+  if name == "omarchy-default" {
+    "Omarchy-Default".to_string()
+  } else {
+    name.to_string()
+  }
+}
+
+fn pin_omarchy_default_first(names: &mut Vec<String>) {
+  names.sort();
+  if let Some(index) = names.iter().position(|name| name == "omarchy-default") {
+    if index != 0 {
+      let value = names.remove(index);
+      names.insert(0, value);
+    }
+  }
+}
+
 
 fn convert_text(text: CoreText<'static>) -> Text<'static> {
   let lines = text
@@ -3082,7 +3181,7 @@ fn command_exists(cmd: &str) -> bool {
 fn apply_key_matches(config: &ResolvedConfig, key: event::KeyEvent) -> bool {
   if let Some(spec) = config.tui_apply_key.as_deref() {
     if let Some(binding) = parse_apply_key(spec) {
-      return key.code == binding.code && key.modifiers == binding.modifiers;
+      return key.code == binding.code && key.modifiers.contains(binding.modifiers);
     }
   }
 
@@ -3091,9 +3190,15 @@ fn apply_key_matches(config: &ResolvedConfig, key: event::KeyEvent) -> bool {
     ApplyKey::new(KeyCode::Char('m'), KeyModifiers::CONTROL),
     ApplyKey::new(KeyCode::Char('j'), KeyModifiers::CONTROL),
   ];
-  default_keys
+  if default_keys
     .iter()
-    .any(|binding| key.code == binding.code && key.modifiers == binding.modifiers)
+    .any(|binding| key.code == binding.code && key.modifiers.contains(binding.modifiers))
+  {
+    return true;
+  }
+
+  // Some terminals do not emit a distinct Ctrl+Enter event and only report Enter.
+  key.code == KeyCode::Enter && key.modifiers.is_empty()
 }
 
 fn parse_apply_key(spec: &str) -> Option<ApplyKey> {
@@ -3290,4 +3395,39 @@ mod tests {
       Some(("theme".to_string(), "theme".to_string()))
     );
   }
+
+  #[test]
+  fn pin_omarchy_default_first_moves_default_to_top() {
+    let mut names = vec![
+      "zeta".to_string(),
+      "omarchy-default".to_string(),
+      "alpha".to_string(),
+    ];
+    pin_omarchy_default_first(&mut names);
+    assert_eq!(
+      names,
+      vec![
+        "omarchy-default".to_string(),
+        "alpha".to_string(),
+        "zeta".to_string()
+      ]
+    );
+  }
+
+  #[test]
+  fn display_theme_name_formats_omarchy_default() {
+    assert_eq!(display_theme_name("omarchy-default"), "Omarchy-Default");
+    assert_eq!(display_theme_name("catppuccin"), "catppuccin");
+  }
+
+  #[test]
+  fn decide_preview_action_logic() {
+    assert_eq!(decide_preview_action(false, false, false), PreviewAction::None);
+    assert_eq!(decide_preview_action(false, true, false), PreviewAction::Clear);
+    assert_eq!(decide_preview_action(true, false, false), PreviewAction::Render);
+    assert_eq!(decide_preview_action(true, true, false), PreviewAction::None);
+    assert_eq!(decide_preview_action(true, true, true), PreviewAction::ClearAndRender);
+    assert_eq!(decide_preview_action(false, false, true), PreviewAction::Clear);
+  }
+
 }

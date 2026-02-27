@@ -1,9 +1,10 @@
 use anyhow::Result;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::config::ResolvedConfig;
-use crate::omarchy;
+use crate::omarchy_defaults;
+use crate::omarchy_defaults::SymlinkEnsureResult;
 use crate::theme_ops::{CommandContext, WalkerMode};
 
 const AUTO_THEME_NAME: &str = "theme-manager-auto";
@@ -67,46 +68,42 @@ pub fn prepare_walker(ctx: &CommandContext<'_>, theme_dir: &Path) -> Result<()> 
 }
 
 pub fn ensure_omarchy_default_theme_link(config: &ResolvedConfig, quiet: bool) -> Result<()> {
-  let Some(default_theme_dir) = omarchy_default_walker_theme_dir(config) else {
+  let Some(default_theme_dir) = omarchy_defaults::resolve_walker_default(config).map(|d| d.path) else {
     return Ok(());
   };
 
   let link_path = config.walker_themes_dir.join(OMARCHY_DEFAULT_THEME_NAME);
-  if link_path.exists() {
-    return Ok(());
-  }
-
-  fs::create_dir_all(&config.walker_themes_dir)?;
-  #[cfg(unix)]
-  {
-    std::os::unix::fs::symlink(&default_theme_dir, &link_path)?;
-  }
-  #[cfg(not(unix))]
-  {
-    return Ok(());
-  }
-
-  if !quiet {
-    println!(
-      "theme-manager: linked Omarchy default Walker theme {} -> {}",
-      link_path.to_string_lossy(),
-      default_theme_dir.to_string_lossy()
-    );
+  match omarchy_defaults::ensure_symlink(&link_path, &default_theme_dir)? {
+    SymlinkEnsureResult::Created => {
+      if !quiet {
+        println!(
+          "theme-manager: linked Omarchy default Walker theme {} -> {}",
+          link_path.to_string_lossy(),
+          default_theme_dir.to_string_lossy()
+        );
+      }
+    }
+    SymlinkEnsureResult::Updated => {
+      if !quiet {
+        println!(
+          "theme-manager: repaired Omarchy default Walker theme link {} -> {}",
+          link_path.to_string_lossy(),
+          default_theme_dir.to_string_lossy()
+        );
+      }
+    }
+    SymlinkEnsureResult::SkippedNonSymlink => {
+      if !quiet {
+        eprintln!(
+          "theme-manager: warning: preserving non-symlink path {}; cannot link Omarchy default Walker theme",
+          link_path.to_string_lossy()
+        );
+      }
+    }
+    SymlinkEnsureResult::Unchanged => {}
   }
 
   Ok(())
-}
-
-fn omarchy_default_walker_theme_dir(config: &ResolvedConfig) -> Option<PathBuf> {
-  let omarchy_root = omarchy::detect_omarchy_root(config)?;
-  let candidate = omarchy_root
-    .join("default/walker/themes")
-    .join(OMARCHY_DEFAULT_THEME_NAME);
-  if candidate.is_dir() {
-    return Some(candidate);
-  }
-
-  None
 }
 
 fn update_walker_config(ctx: &CommandContext<'_>, theme_name: &str) -> Result<()> {

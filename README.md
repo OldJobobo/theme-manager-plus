@@ -354,6 +354,33 @@ Supports Omarchy templates via:
 - `$OMARCHY_PATH/default/themed`
 - `~/.config/omarchy/themed` (user overrides)
 
+### Omarchy Default Source Resolution
+
+`omarchy-default` component discovery is unified across CLI and TUI.
+
+Root detection order:
+1. `OMARCHY_PATH`
+2. configured `omarchy_bin_dir` parent
+3. `~/.local/share/omarchy`
+
+Module default precedence:
+- Waybar: `default/waybar/themes/omarchy-default` -> `default/waybar`
+- Walker: `default/walker/themes/omarchy-default` -> `default/walker`
+- Hyprlock: `default/hyprlock/themes/omarchy-default` -> `default/hyprlock` -> `themes/omarchy-default` -> `config/hypr` -> user config fallbacks under `~/.config/omarchy/`
+- Starship: `default/starship/themes/omarchy-default.toml` -> `default/starship.toml` -> `default/starship/starship.toml`
+
+Validation rules:
+- Waybar requires both `config.jsonc` and `style.css`
+- Walker requires `style.css`
+- Hyprlock requires `hyprlock.conf`
+- Starship requires a `.toml` file
+
+Troubleshooting non-standard Omarchy layouts:
+- If your Omarchy root is not `~/.local/share/omarchy`, set `OMARCHY_PATH` explicitly.
+- If helper commands are installed in a custom bin location, set `OMARCHY_BIN_DIR`.
+- Use `theme-manager print-config` to verify resolved paths before applying themes.
+- If `omarchy-default` is missing from tabs, confirm required module files exist at one of the supported paths above.
+
 ---
 
 ## Configuration
