@@ -4,7 +4,8 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::config::ResolvedConfig;
-use crate::omarchy;
+use crate::omarchy_defaults;
+use crate::omarchy_defaults::SymlinkEnsureResult;
 use crate::omarchy::{RestartAction, RestartCommand};
 use crate::theme_ops::{CommandContext, WaybarMode};
 use walkdir::WalkDir;
@@ -57,51 +58,41 @@ pub fn prepare_waybar(ctx: &CommandContext<'_>, theme_dir: &Path) -> Result<Opti
 }
 
 pub fn ensure_omarchy_default_theme_link(config: &ResolvedConfig, quiet: bool) -> Result<()> {
-  let Some(default_theme_dir) = omarchy_default_waybar_theme_dir(config) else {
+  let Some(default_theme_dir) = omarchy_defaults::resolve_waybar_default(config).map(|d| d.path) else {
     return Ok(());
   };
 
   let link_path = config.waybar_themes_dir.join(OMARCHY_DEFAULT_THEME_NAME);
-  if link_path.exists() {
-    return Ok(());
-  }
-
-  fs::create_dir_all(&config.waybar_themes_dir)?;
-  #[cfg(unix)]
-  {
-    std::os::unix::fs::symlink(&default_theme_dir, &link_path)?;
-  }
-  #[cfg(not(unix))]
-  {
-    return Ok(());
-  }
-
-  if !quiet {
-    println!(
-      "theme-manager: linked Omarchy default Waybar theme {} -> {}",
-      link_path.to_string_lossy(),
-      default_theme_dir.to_string_lossy()
-    );
+  match omarchy_defaults::ensure_symlink(&link_path, &default_theme_dir)? {
+    SymlinkEnsureResult::Created => {
+      if !quiet {
+        println!(
+          "theme-manager: linked Omarchy default Waybar theme {} -> {}",
+          link_path.to_string_lossy(),
+          default_theme_dir.to_string_lossy()
+        );
+      }
+    }
+    SymlinkEnsureResult::Updated => {
+      if !quiet {
+        println!(
+          "theme-manager: repaired Omarchy default Waybar theme link {} -> {}",
+          link_path.to_string_lossy(),
+          default_theme_dir.to_string_lossy()
+        );
+      }
+    }
+    SymlinkEnsureResult::SkippedNonSymlink => {
+      if !quiet {
+        eprintln!(
+          "theme-manager: warning: preserving non-symlink path {}; cannot link Omarchy default Waybar theme",
+          link_path.to_string_lossy()
+        );
+      }
+    }
+    SymlinkEnsureResult::Unchanged => {}
   }
   Ok(())
-}
-
-fn omarchy_default_waybar_theme_dir(config: &ResolvedConfig) -> Option<PathBuf> {
-  let omarchy_root = omarchy::detect_omarchy_root(config)?;
-
-  let named_candidate = omarchy_root
-    .join("default/waybar/themes")
-    .join(OMARCHY_DEFAULT_THEME_NAME);
-  if named_candidate.join("config.jsonc").is_file() && named_candidate.join("style.css").is_file() {
-    return Some(named_candidate);
-  }
-
-  let base_candidate = omarchy_root.join("default/waybar");
-  if base_candidate.join("config.jsonc").is_file() && base_candidate.join("style.css").is_file() {
-    return Some(base_candidate);
-  }
-
-  None
 }
 
 fn apply_copy(

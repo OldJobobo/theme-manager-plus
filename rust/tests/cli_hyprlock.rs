@@ -234,6 +234,72 @@ default_name = "omarchy-default"
 }
 
 #[test]
+fn hyprlock_prefers_highest_precedence_default_candidate() {
+  let env = setup_env();
+  add_omarchy_stubs(&env.bin);
+  let themes = omarchy_dir(&env.home).join("themes");
+  fs::create_dir_all(themes.join("theme-a")).unwrap();
+
+  let top_candidate = env
+    .home
+    .join(".local/share/omarchy/default/hyprlock/themes/omarchy-default");
+  fs::create_dir_all(&top_candidate).unwrap();
+  fs::write(top_candidate.join("hyprlock.conf"), "top").unwrap();
+
+  let lower_candidate = env.home.join(".local/share/omarchy/default/hyprlock");
+  fs::create_dir_all(&lower_candidate).unwrap();
+  fs::write(lower_candidate.join("hyprlock.conf"), "lower").unwrap();
+
+  let cfg_dir = env.home.join(".config/theme-manager");
+  fs::create_dir_all(&cfg_dir).unwrap();
+  write_toml(
+    &cfg_dir.join("config.toml"),
+    r#"[hyprlock]
+default_mode = "named"
+default_name = "omarchy-default"
+"#,
+  );
+
+  let mut cmd = cmd_with_env(&env);
+  cmd.env_remove("THEME_MANAGER_SKIP_APPS");
+  cmd.args(["set", "theme-a"]);
+  cmd.assert().success();
+
+  let link_path = env.home.join(".config/hypr/themes/hyprlock/omarchy-default");
+  let target = fs::read_link(&link_path).unwrap();
+  assert_eq!(target, top_candidate);
+}
+
+#[test]
+fn hyprlock_missing_default_file_does_not_create_default_link() {
+  let env = setup_env();
+  add_omarchy_stubs(&env.bin);
+  let themes = omarchy_dir(&env.home).join("themes");
+  fs::create_dir_all(themes.join("theme-a")).unwrap();
+
+  let invalid_default = env.home.join(".local/share/omarchy/default/hyprlock");
+  fs::create_dir_all(&invalid_default).unwrap();
+
+  let cfg_dir = env.home.join(".config/theme-manager");
+  fs::create_dir_all(&cfg_dir).unwrap();
+  write_toml(
+    &cfg_dir.join("config.toml"),
+    r#"[hyprlock]
+default_mode = "named"
+default_name = "omarchy-default"
+"#,
+  );
+
+  let mut cmd = cmd_with_env(&env);
+  cmd.env_remove("THEME_MANAGER_SKIP_APPS");
+  cmd.args(["set", "theme-a"]);
+  cmd.assert().success();
+
+  let link_path = env.home.join(".config/hypr/themes/hyprlock/omarchy-default");
+  assert!(!link_path.exists());
+}
+
+#[test]
 fn hyprlock_standalone_command() {
   let env = setup_env();
   add_omarchy_stubs(&env.bin);

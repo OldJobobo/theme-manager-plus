@@ -40,6 +40,7 @@ No commit message convention is enforced. Use concise, present-tense messages (e
 
 ## Architecture Notes
 Follow the compatibility requirements outlined in `Omarchy-theme-management.md`. Maintain the current theme and background symlinks under `~/.config/omarchy/current/`, reload user-facing components, and trigger `omarchy-hook theme-set` after switching.
+Omarchy default component discovery for Waybar/Walker/Hyprlock/Starship is centralized in `rust/src/omarchy_defaults.rs`; keep module behavior aligned to this shared resolver instead of adding per-module fallback probing.
 
 ## Configuration
 Defaults can be set via `~/.config/theme-manager/config.toml` or `./.theme-manager.toml`. Local config overrides user config; CLI flags override both.

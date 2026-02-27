@@ -206,3 +206,122 @@ default_name = "omarchy-default"
   let applied_target = fs::read_link(applied).unwrap();
   assert!(applied_target.ends_with("themes/omarchy-default/config.jsonc"));
 }
+
+#[test]
+fn waybar_repairs_existing_omarchy_default_symlink_target() {
+  let env = setup_env();
+  add_omarchy_stubs(&env.bin);
+  let themes = omarchy_dir(&env.home).join("themes");
+  fs::create_dir_all(themes.join("theme-a")).unwrap();
+
+  let wrong_default = env.home.join(".local/share/omarchy/default/waybar-old");
+  fs::create_dir_all(&wrong_default).unwrap();
+  fs::write(wrong_default.join("config.jsonc"), "old-cfg").unwrap();
+  fs::write(wrong_default.join("style.css"), "old-style").unwrap();
+
+  let omarchy_default = env.home.join(".local/share/omarchy/default/waybar");
+  fs::create_dir_all(&omarchy_default).unwrap();
+  fs::write(omarchy_default.join("config.jsonc"), "omarchy-cfg").unwrap();
+  fs::write(omarchy_default.join("style.css"), "omarchy-style").unwrap();
+
+  let link_path = env.home.join(".config/waybar/themes/omarchy-default");
+  fs::create_dir_all(link_path.parent().unwrap()).unwrap();
+  #[cfg(unix)]
+  std::os::unix::fs::symlink(&wrong_default, &link_path).unwrap();
+
+  let cfg_dir = env.home.join(".config/theme-manager");
+  fs::create_dir_all(&cfg_dir).unwrap();
+  write_toml(
+    &cfg_dir.join("config.toml"),
+    r#"[waybar]
+apply_mode = "symlink"
+default_mode = "named"
+default_name = "omarchy-default"
+"#,
+  );
+
+  let mut cmd = cmd_with_env(&env);
+  cmd.env_remove("THEME_MANAGER_SKIP_APPS");
+  cmd.args(["set", "theme-a"]);
+  cmd.assert().success();
+
+  let target = fs::read_link(&link_path).unwrap();
+  assert_eq!(target, omarchy_default);
+}
+
+#[test]
+fn waybar_prefers_named_default_over_base_default() {
+  let env = setup_env();
+  add_omarchy_stubs(&env.bin);
+  let themes = omarchy_dir(&env.home).join("themes");
+  fs::create_dir_all(themes.join("theme-a")).unwrap();
+
+  let base_default = env.home.join(".local/share/omarchy/default/waybar");
+  fs::create_dir_all(&base_default).unwrap();
+  fs::write(base_default.join("config.jsonc"), "base-cfg").unwrap();
+  fs::write(base_default.join("style.css"), "base-style").unwrap();
+
+  let named_default = env
+    .home
+    .join(".local/share/omarchy/default/waybar/themes/omarchy-default");
+  fs::create_dir_all(&named_default).unwrap();
+  fs::write(named_default.join("config.jsonc"), "named-cfg").unwrap();
+  fs::write(named_default.join("style.css"), "named-style").unwrap();
+
+  let cfg_dir = env.home.join(".config/theme-manager");
+  fs::create_dir_all(&cfg_dir).unwrap();
+  write_toml(
+    &cfg_dir.join("config.toml"),
+    r#"[waybar]
+apply_mode = "symlink"
+default_mode = "named"
+default_name = "omarchy-default"
+"#,
+  );
+
+  let mut cmd = cmd_with_env(&env);
+  cmd.env_remove("THEME_MANAGER_SKIP_APPS");
+  cmd.args(["set", "theme-a"]);
+  cmd.assert().success();
+
+  let link_path = env.home.join(".config/waybar/themes/omarchy-default");
+  let target = fs::read_link(&link_path).unwrap();
+  assert_eq!(target, named_default);
+}
+
+#[test]
+fn waybar_uses_omarchy_root_config_waybar_when_default_waybar_missing_files() {
+  let env = setup_env();
+  add_omarchy_stubs(&env.bin);
+  let themes = omarchy_dir(&env.home).join("themes");
+  fs::create_dir_all(themes.join("theme-a")).unwrap();
+
+  let invalid_base_default = env.home.join(".local/share/omarchy/default/waybar");
+  fs::create_dir_all(&invalid_base_default).unwrap();
+  fs::write(invalid_base_default.join("indicators"), "x").unwrap();
+
+  let config_waybar = env.home.join(".local/share/omarchy/config/waybar");
+  fs::create_dir_all(&config_waybar).unwrap();
+  fs::write(config_waybar.join("config.jsonc"), "cfg").unwrap();
+  fs::write(config_waybar.join("style.css"), "style").unwrap();
+
+  let cfg_dir = env.home.join(".config/theme-manager");
+  fs::create_dir_all(&cfg_dir).unwrap();
+  write_toml(
+    &cfg_dir.join("config.toml"),
+    r#"[waybar]
+apply_mode = "symlink"
+default_mode = "named"
+default_name = "omarchy-default"
+"#,
+  );
+
+  let mut cmd = cmd_with_env(&env);
+  cmd.env_remove("THEME_MANAGER_SKIP_APPS");
+  cmd.args(["set", "theme-a"]);
+  cmd.assert().success();
+
+  let link_path = env.home.join(".config/waybar/themes/omarchy-default");
+  let target = fs::read_link(&link_path).unwrap();
+  assert_eq!(target, config_waybar);
+}
