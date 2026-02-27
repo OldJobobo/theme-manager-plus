@@ -394,9 +394,7 @@ Presets are stored in:
 ## Development Notes
 
 - Rust CLI entry: `rust/src/main.rs`
-- Legacy Bash CLI: `bin/theme-manager`
 - Rust tests: `rust/tests/`
-- Bats tests: `tests/`
 
 Run tests:
 ```sh

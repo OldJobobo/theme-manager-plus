@@ -235,9 +235,7 @@ pub fn cmd_version() {
 }
 
 pub fn cmd_browse_stub(_ctx: &CommandContext<'_>) -> Result<()> {
-  Err(anyhow!(
-    "browse is not implemented in the Rust binary yet (use the Bash CLI for now)"
-  ))
+  Err(anyhow!("browse is not implemented in this command path"))
 }
 
 pub fn list_theme_entries(theme_root: &Path) -> Result<Vec<String>> {

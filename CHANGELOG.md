@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Removed legacy Bash-only implementation artifacts from the repository:
+  - deleted `src/theme-manager.sh` and `bin/theme-manager`
+  - deleted Bash config samples (`config.example`, `./.theme-manager.conf`)
+  - deleted legacy Bats tests under `tests/`
+- Updated repository docs and contributor guidelines to reflect Rust-only CLI/TUI workflows.
+
 ## 0.3.0
 
 - Hardened Walker config updates to change only the `theme` key (without clobbering keys like `theme_name`).
