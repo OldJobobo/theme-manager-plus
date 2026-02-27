@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## 0.3.2
+
 - Removed legacy Bash-only implementation artifacts from the repository:
   - deleted `src/theme-manager.sh` and `bin/theme-manager`
   - deleted Bash config samples (`config.example`, `./.theme-manager.conf`)
