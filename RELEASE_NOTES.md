@@ -2,10 +2,15 @@
 
 ## Unreleased
 
-## 0.3.2
+## 0.3.3
 
-- Removed legacy Bash-only implementation artifacts from the repository (`src/theme-manager.sh`, `bin/theme-manager`, Bash sample configs, and legacy Bats tests).
-- Updated repository docs and contributor guidance to reflect Rust-only CLI/TUI workflows.
+- Unified Omarchy default resolution for Waybar, Walker, Hyprlock, and Starship through a shared resolver.
+- Added fallback discovery for Omarchy-provided Waybar and Starship defaults across install layouts.
+- `Omarchy-Default` is now pinned to the top of module pickers with a consistent display label.
+- Fixed apply key handling (`Ctrl+Enter`) for better terminal compatibility.
+- Fixed TUI image preview refresh/clear behavior to prevent stale or distorted preview images during tab/apply navigation.
+- Added/expanded regression tests for default resolution precedence, missing-default behavior, and symlink repair.
+- Removed legacy Bash-only implementation artifacts and updated docs to reflect Rust-only CLI/TUI workflows.
 
 ## 0.3.0
 
