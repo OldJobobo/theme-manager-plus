@@ -6,7 +6,7 @@ All notable changes to this project are documented in this file.
 
 ## 0.3.5
 
-- Stopped falling back to `makoctl reload` just because `makoctl` is installed; Mako is now reloaded only when the Mako daemon is active, avoiding DBus errors on SwayNC systems.
+- Silenced speculative notification reload failures so systems with both SwayNC and `makoctl` installed do not show Mako DBus errors.
 
 ## 0.3.4
 
@@ -15,7 +15,7 @@ All notable changes to this project are documented in this file.
 - Added Foot terminal image preview support in browse mode via a Sixel backend (using `chafa`).
 - Added preview-backend detection precedence tests (`Kitty` -> `Sixel` -> `Chafa` -> `None`).
 - Fixed browse-mode image previews to render reliably again with terminal image backends and broadened preview discovery to common image extensions (`png`, `jpg`, `jpeg`, `webp`).
-- Made notification reloads apply to running SwayNC and/or Mako daemons, while still falling back to installed reload clients when no active daemon is detected.
+- Made notification reloads prefer active SwayNC and Mako daemons before trying quiet fallback reload commands.
 
 ## 0.3.3
 

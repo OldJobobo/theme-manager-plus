@@ -291,45 +291,48 @@ fn reload_notifications(quiet: bool) {
         .unwrap_or(false);
 
     if swaync_running {
-        reload_swaync(quiet);
+        reload_swaync(quiet, true);
     }
     if mako_running {
-        reload_mako(quiet);
+        reload_mako(quiet, true);
     }
     if swaync_running || mako_running {
         return;
     }
 
     if command_exists("swaync-client") {
-        reload_swaync(quiet);
+        reload_swaync(true, false);
+    }
+    if command_exists("makoctl") {
+        reload_mako(true, false);
     }
 }
 
-fn reload_swaync(quiet: bool) {
+fn reload_swaync(quiet: bool, warn: bool) {
     if !command_exists("swaync-client") {
-        if !quiet {
+        if warn && !quiet {
             eprintln!("theme-manager: swaync reload skipped: swaync-client not found in PATH");
         }
         return;
     }
 
     if let Err(err) = run_command("swaync-client", &["--reload-config"], quiet) {
-        if !quiet {
+        if warn && !quiet {
             eprintln!("theme-manager: swaync reload skipped: {err}");
         }
     }
 }
 
-fn reload_mako(quiet: bool) {
+fn reload_mako(quiet: bool, warn: bool) {
     if !command_exists("makoctl") {
-        if !quiet {
+        if warn && !quiet {
             eprintln!("theme-manager: mako reload skipped: makoctl not found in PATH");
         }
         return;
     }
 
     if let Err(err) = run_command("makoctl", &["reload"], quiet) {
-        if !quiet {
+        if warn && !quiet {
             eprintln!("theme-manager: mako reload skipped: {err}");
         }
     }

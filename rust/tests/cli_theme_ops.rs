@@ -1,5 +1,6 @@
 mod support;
 
+use predicates::prelude::PredicateBooleanExt;
 use std::fs;
 use support::*;
 
@@ -241,23 +242,29 @@ fn set_reloads_running_mako_when_swaync_client_is_installed() {
 }
 
 #[test]
-fn set_does_not_reload_mako_when_only_makoctl_is_installed() {
+fn set_silences_mako_fallback_when_only_makoctl_is_installed() {
     let env = setup_env();
     let themes = omarchy_dir(&env.home).join("themes");
     fs::create_dir_all(themes.join("theme-a")).unwrap();
     add_omarchy_stubs(&env.bin);
+    write_script(
+        &env.bin.join("pgrep"),
+        "#!/usr/bin/env bash\nset -euo pipefail\nexit 1\n",
+    );
 
     let mako_marker = env.temp.path().join("mako-reloaded");
     write_script(
         &env.bin.join("makoctl"),
         &format!(
-            "#!/usr/bin/env bash\nset -euo pipefail\nprintf ok > {}\nexit 1\n",
+            "#!/usr/bin/env bash\nset -euo pipefail\nprintf ok > {}\necho 'Object does not exist at path /fr/emersion/Mako' >&2\nexit 1\n",
             mako_marker.display()
         ),
     );
 
     let mut cmd = cmd_with_apps_env(&env);
     cmd.args(["set", "theme-a"]);
-    cmd.assert().success();
-    assert!(!mako_marker.exists());
+    cmd.assert()
+        .success()
+        .stderr(predicates::str::contains("Object does not exist").not());
+    assert!(mako_marker.exists());
 }
