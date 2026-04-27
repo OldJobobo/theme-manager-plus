@@ -1,295 +1,302 @@
 mod support;
 
-use support::*;
 use std::fs;
+use support::*;
 
 #[test]
 fn starship_preset_applies() {
-  let env = setup_env();
-  add_omarchy_stubs(&env.bin);
-  let themes = omarchy_dir(&env.home).join("themes");
-  fs::create_dir_all(themes.join("theme-a")).unwrap();
+    let env = setup_env();
+    add_omarchy_stubs(&env.bin);
+    let themes = omarchy_dir(&env.home).join("themes");
+    fs::create_dir_all(themes.join("theme-a")).unwrap();
 
-  let cfg_dir = env.home.join(".config/theme-manager");
-  fs::create_dir_all(&cfg_dir).unwrap();
-  write_toml(
-    &cfg_dir.join("config.toml"),
-    r#"[starship]
+    let cfg_dir = env.home.join(".config/theme-manager");
+    fs::create_dir_all(&cfg_dir).unwrap();
+    write_toml(
+        &cfg_dir.join("config.toml"),
+        r#"[starship]
 default_mode = "preset"
 default_preset = "tokyo-night"
 "#,
-  );
+    );
 
-  let script = env.bin.join("starship");
-  write_script(
+    let script = env.bin.join("starship");
+    write_script(
     &script,
     "#!/usr/bin/env bash\n\nif [[ \"$1\" == \"preset\" && \"$2\" == \"tokyo-night\" ]]; then\n  echo preset-config\n  exit 0\nfi\nexit 1\n",
   );
 
-  let mut cmd = cmd_with_env(&env);
-  cmd.env_remove("THEME_MANAGER_SKIP_APPS");
-  cmd.args(["set", "theme-a"]);
-  cmd.assert().success();
+    let mut cmd = cmd_with_env(&env);
+    cmd.env_remove("THEME_MANAGER_SKIP_APPS");
+    cmd.args(["set", "theme-a"]);
+    cmd.assert().success();
 
-  let applied = env.home.join(".config/starship.toml");
-  assert!(applied.exists());
-  let content = fs::read_to_string(applied).unwrap();
-  assert_eq!(content, "preset-config\n");
+    let applied = env.home.join(".config/starship.toml");
+    assert!(applied.exists());
+    let content = fs::read_to_string(applied).unwrap();
+    assert_eq!(content, "preset-config\n");
 }
 
 #[test]
 fn starship_named_applies() {
-  let env = setup_env();
-  add_omarchy_stubs(&env.bin);
-  let themes = omarchy_dir(&env.home).join("themes");
-  fs::create_dir_all(themes.join("theme-a")).unwrap();
+    let env = setup_env();
+    add_omarchy_stubs(&env.bin);
+    let themes = omarchy_dir(&env.home).join("themes");
+    fs::create_dir_all(themes.join("theme-a")).unwrap();
 
-  let cfg_dir = env.home.join(".config/theme-manager");
-  fs::create_dir_all(&cfg_dir).unwrap();
-  write_toml(
-    &cfg_dir.join("config.toml"),
-    r#"[starship]
+    let cfg_dir = env.home.join(".config/theme-manager");
+    fs::create_dir_all(&cfg_dir).unwrap();
+    write_toml(
+        &cfg_dir.join("config.toml"),
+        r#"[starship]
 default_mode = "named"
 default_name = "rose-pine"
 "#,
-  );
+    );
 
-  let themes_dir = env.home.join(".config/starship-themes");
-  fs::create_dir_all(&themes_dir).unwrap();
-  fs::write(themes_dir.join("rose-pine.toml"), "user-config").unwrap();
+    let themes_dir = env.home.join(".config/starship-themes");
+    fs::create_dir_all(&themes_dir).unwrap();
+    fs::write(themes_dir.join("rose-pine.toml"), "user-config").unwrap();
 
-  let mut cmd = cmd_with_env(&env);
-  cmd.env_remove("THEME_MANAGER_SKIP_APPS");
-  cmd.args(["set", "theme-a"]);
-  cmd.assert().success();
+    let mut cmd = cmd_with_env(&env);
+    cmd.env_remove("THEME_MANAGER_SKIP_APPS");
+    cmd.args(["set", "theme-a"]);
+    cmd.assert().success();
 
-  let applied = env.home.join(".config/starship.toml");
-  assert!(applied.exists());
-  let content = fs::read_to_string(applied).unwrap();
-  assert_eq!(content, "user-config");
+    let applied = env.home.join(".config/starship.toml");
+    assert!(applied.exists());
+    let content = fs::read_to_string(applied).unwrap();
+    assert_eq!(content, "user-config");
 }
 
 #[test]
 fn starship_preset_missing_errors() {
-  let env = setup_env();
-  add_omarchy_stubs(&env.bin);
-  let themes = omarchy_dir(&env.home).join("themes");
-  fs::create_dir_all(themes.join("theme-a")).unwrap();
+    let env = setup_env();
+    add_omarchy_stubs(&env.bin);
+    let themes = omarchy_dir(&env.home).join("themes");
+    fs::create_dir_all(themes.join("theme-a")).unwrap();
 
-  let cfg_dir = env.home.join(".config/theme-manager");
-  fs::create_dir_all(&cfg_dir).unwrap();
-  write_toml(
-    &cfg_dir.join("config.toml"),
-    r#"[starship]
+    let cfg_dir = env.home.join(".config/theme-manager");
+    fs::create_dir_all(&cfg_dir).unwrap();
+    write_toml(
+        &cfg_dir.join("config.toml"),
+        r#"[starship]
 default_mode = "preset"
 default_preset = "missing"
 "#,
-  );
+    );
 
-  let script = env.bin.join("starship");
-  write_script(&script, "#!/usr/bin/env bash\n\nexit 1\n");
+    let script = env.bin.join("starship");
+    write_script(&script, "#!/usr/bin/env bash\n\nexit 1\n");
 
-  let mut cmd = cmd_with_env(&env);
-  cmd.env_remove("THEME_MANAGER_SKIP_APPS");
-  cmd.args(["set", "theme-a"]);
-  cmd
-    .assert()
-    .failure()
-    .stderr(predicates::str::contains("failed to apply starship preset"));
+    let mut cmd = cmd_with_env(&env);
+    cmd.env_remove("THEME_MANAGER_SKIP_APPS");
+    cmd.args(["set", "theme-a"]);
+    cmd.assert()
+        .failure()
+        .stderr(predicates::str::contains("failed to apply starship preset"));
 }
 
 #[test]
 fn starship_named_missing_errors() {
-  let env = setup_env();
-  add_omarchy_stubs(&env.bin);
-  let themes = omarchy_dir(&env.home).join("themes");
-  fs::create_dir_all(themes.join("theme-a")).unwrap();
+    let env = setup_env();
+    add_omarchy_stubs(&env.bin);
+    let themes = omarchy_dir(&env.home).join("themes");
+    fs::create_dir_all(themes.join("theme-a")).unwrap();
 
-  let cfg_dir = env.home.join(".config/theme-manager");
-  fs::create_dir_all(&cfg_dir).unwrap();
-  write_toml(
-    &cfg_dir.join("config.toml"),
-    r#"[starship]
+    let cfg_dir = env.home.join(".config/theme-manager");
+    fs::create_dir_all(&cfg_dir).unwrap();
+    write_toml(
+        &cfg_dir.join("config.toml"),
+        r#"[starship]
 default_mode = "named"
 default_name = "missing"
 "#,
-  );
+    );
 
-  let mut cmd = cmd_with_env(&env);
-  cmd.env_remove("THEME_MANAGER_SKIP_APPS");
-  cmd.args(["set", "theme-a"]);
-  cmd
-    .assert()
-    .failure()
-    .stderr(predicates::str::contains("starship theme not found"));
+    let mut cmd = cmd_with_env(&env);
+    cmd.env_remove("THEME_MANAGER_SKIP_APPS");
+    cmd.args(["set", "theme-a"]);
+    cmd.assert()
+        .failure()
+        .stderr(predicates::str::contains("starship theme not found"));
 }
 
 #[test]
 fn starship_links_omarchy_default_theme_when_missing() {
-  let env = setup_env();
-  add_omarchy_stubs(&env.bin);
-  let themes = omarchy_dir(&env.home).join("themes");
-  fs::create_dir_all(themes.join("theme-a")).unwrap();
+    let env = setup_env();
+    add_omarchy_stubs(&env.bin);
+    let themes = omarchy_dir(&env.home).join("themes");
+    fs::create_dir_all(themes.join("theme-a")).unwrap();
 
-  let omarchy_default = env.home.join(".local/share/omarchy/default/starship.toml");
-  fs::create_dir_all(omarchy_default.parent().unwrap()).unwrap();
-  fs::write(&omarchy_default, "format = 'omarchy'\n").unwrap();
+    let omarchy_default = env.home.join(".local/share/omarchy/default/starship.toml");
+    fs::create_dir_all(omarchy_default.parent().unwrap()).unwrap();
+    fs::write(&omarchy_default, "format = 'omarchy'\n").unwrap();
 
-  let cfg_dir = env.home.join(".config/theme-manager");
-  fs::create_dir_all(&cfg_dir).unwrap();
-  write_toml(
-    &cfg_dir.join("config.toml"),
-    r#"[starship]
+    let cfg_dir = env.home.join(".config/theme-manager");
+    fs::create_dir_all(&cfg_dir).unwrap();
+    write_toml(
+        &cfg_dir.join("config.toml"),
+        r#"[starship]
 default_mode = "named"
 default_name = "omarchy-default"
 "#,
-  );
+    );
 
-  let mut cmd = cmd_with_env(&env);
-  cmd.env_remove("THEME_MANAGER_SKIP_APPS");
-  cmd.args(["set", "theme-a"]);
-  cmd.assert().success();
+    let mut cmd = cmd_with_env(&env);
+    cmd.env_remove("THEME_MANAGER_SKIP_APPS");
+    cmd.args(["set", "theme-a"]);
+    cmd.assert().success();
 
-  let link_path = env.home.join(".config/starship-themes/omarchy-default.toml");
-  let meta = fs::symlink_metadata(&link_path).unwrap();
-  assert!(meta.file_type().is_symlink());
-  let target = fs::read_link(&link_path).unwrap();
-  assert_eq!(target, omarchy_default);
+    let link_path = env
+        .home
+        .join(".config/starship-themes/omarchy-default.toml");
+    let meta = fs::symlink_metadata(&link_path).unwrap();
+    assert!(meta.file_type().is_symlink());
+    let target = fs::read_link(&link_path).unwrap();
+    assert_eq!(target, omarchy_default);
 
-  let applied = env.home.join(".config/starship.toml");
-  assert!(applied.exists());
-  let content = fs::read_to_string(applied).unwrap();
-  assert_eq!(content, "format = 'omarchy'\n");
+    let applied = env.home.join(".config/starship.toml");
+    assert!(applied.exists());
+    let content = fs::read_to_string(applied).unwrap();
+    assert_eq!(content, "format = 'omarchy'\n");
 }
 
 #[test]
 fn starship_repairs_existing_omarchy_default_symlink_target() {
-  let env = setup_env();
-  add_omarchy_stubs(&env.bin);
-  let themes = omarchy_dir(&env.home).join("themes");
-  fs::create_dir_all(themes.join("theme-a")).unwrap();
+    let env = setup_env();
+    add_omarchy_stubs(&env.bin);
+    let themes = omarchy_dir(&env.home).join("themes");
+    fs::create_dir_all(themes.join("theme-a")).unwrap();
 
-  let wrong_default = env.home.join(".local/share/omarchy/default/starship-old.toml");
-  fs::create_dir_all(wrong_default.parent().unwrap()).unwrap();
-  fs::write(&wrong_default, "format = 'old'\n").unwrap();
+    let wrong_default = env
+        .home
+        .join(".local/share/omarchy/default/starship-old.toml");
+    fs::create_dir_all(wrong_default.parent().unwrap()).unwrap();
+    fs::write(&wrong_default, "format = 'old'\n").unwrap();
 
-  let omarchy_default = env.home.join(".local/share/omarchy/default/starship.toml");
-  fs::write(&omarchy_default, "format = 'omarchy'\n").unwrap();
+    let omarchy_default = env.home.join(".local/share/omarchy/default/starship.toml");
+    fs::write(&omarchy_default, "format = 'omarchy'\n").unwrap();
 
-  let link_path = env.home.join(".config/starship-themes/omarchy-default.toml");
-  fs::create_dir_all(link_path.parent().unwrap()).unwrap();
-  #[cfg(unix)]
-  std::os::unix::fs::symlink(&wrong_default, &link_path).unwrap();
+    let link_path = env
+        .home
+        .join(".config/starship-themes/omarchy-default.toml");
+    fs::create_dir_all(link_path.parent().unwrap()).unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&wrong_default, &link_path).unwrap();
 
-  let cfg_dir = env.home.join(".config/theme-manager");
-  fs::create_dir_all(&cfg_dir).unwrap();
-  write_toml(
-    &cfg_dir.join("config.toml"),
-    r#"[starship]
+    let cfg_dir = env.home.join(".config/theme-manager");
+    fs::create_dir_all(&cfg_dir).unwrap();
+    write_toml(
+        &cfg_dir.join("config.toml"),
+        r#"[starship]
 default_mode = "named"
 default_name = "omarchy-default"
 "#,
-  );
+    );
 
-  let mut cmd = cmd_with_env(&env);
-  cmd.env_remove("THEME_MANAGER_SKIP_APPS");
-  cmd.args(["set", "theme-a"]);
-  cmd.assert().success();
+    let mut cmd = cmd_with_env(&env);
+    cmd.env_remove("THEME_MANAGER_SKIP_APPS");
+    cmd.args(["set", "theme-a"]);
+    cmd.assert().success();
 
-  let target = fs::read_link(&link_path).unwrap();
-  assert_eq!(target, omarchy_default);
+    let target = fs::read_link(&link_path).unwrap();
+    assert_eq!(target, omarchy_default);
 }
 
 #[test]
 fn starship_prefers_named_default_over_direct_default() {
-  let env = setup_env();
-  add_omarchy_stubs(&env.bin);
-  let themes = omarchy_dir(&env.home).join("themes");
-  fs::create_dir_all(themes.join("theme-a")).unwrap();
+    let env = setup_env();
+    add_omarchy_stubs(&env.bin);
+    let themes = omarchy_dir(&env.home).join("themes");
+    fs::create_dir_all(themes.join("theme-a")).unwrap();
 
-  let direct_default = env.home.join(".local/share/omarchy/default/starship.toml");
-  fs::create_dir_all(direct_default.parent().unwrap()).unwrap();
-  fs::write(&direct_default, "format = 'direct'\n").unwrap();
+    let direct_default = env.home.join(".local/share/omarchy/default/starship.toml");
+    fs::create_dir_all(direct_default.parent().unwrap()).unwrap();
+    fs::write(&direct_default, "format = 'direct'\n").unwrap();
 
-  let named_default = env
-    .home
-    .join(".local/share/omarchy/default/starship/themes/omarchy-default.toml");
-  fs::create_dir_all(named_default.parent().unwrap()).unwrap();
-  fs::write(&named_default, "format = 'named'\n").unwrap();
+    let named_default = env
+        .home
+        .join(".local/share/omarchy/default/starship/themes/omarchy-default.toml");
+    fs::create_dir_all(named_default.parent().unwrap()).unwrap();
+    fs::write(&named_default, "format = 'named'\n").unwrap();
 
-  let cfg_dir = env.home.join(".config/theme-manager");
-  fs::create_dir_all(&cfg_dir).unwrap();
-  write_toml(
-    &cfg_dir.join("config.toml"),
-    r#"[starship]
+    let cfg_dir = env.home.join(".config/theme-manager");
+    fs::create_dir_all(&cfg_dir).unwrap();
+    write_toml(
+        &cfg_dir.join("config.toml"),
+        r#"[starship]
 default_mode = "named"
 default_name = "omarchy-default"
 "#,
-  );
+    );
 
-  let mut cmd = cmd_with_env(&env);
-  cmd.env_remove("THEME_MANAGER_SKIP_APPS");
-  cmd.args(["set", "theme-a"]);
-  cmd.assert().success();
+    let mut cmd = cmd_with_env(&env);
+    cmd.env_remove("THEME_MANAGER_SKIP_APPS");
+    cmd.args(["set", "theme-a"]);
+    cmd.assert().success();
 
-  let link_path = env.home.join(".config/starship-themes/omarchy-default.toml");
-  let target = fs::read_link(&link_path).unwrap();
-  assert_eq!(target, named_default);
+    let link_path = env
+        .home
+        .join(".config/starship-themes/omarchy-default.toml");
+    let target = fs::read_link(&link_path).unwrap();
+    assert_eq!(target, named_default);
 }
 
 #[test]
 fn starship_uses_omarchy_root_config_starship_toml_when_default_paths_missing() {
-  let env = setup_env();
-  add_omarchy_stubs(&env.bin);
-  let themes = omarchy_dir(&env.home).join("themes");
-  fs::create_dir_all(themes.join("theme-a")).unwrap();
+    let env = setup_env();
+    add_omarchy_stubs(&env.bin);
+    let themes = omarchy_dir(&env.home).join("themes");
+    fs::create_dir_all(themes.join("theme-a")).unwrap();
 
-  let config_default = env.home.join(".local/share/omarchy/config/starship.toml");
-  fs::create_dir_all(config_default.parent().unwrap()).unwrap();
-  fs::write(&config_default, "format = 'config-default'\n").unwrap();
+    let config_default = env.home.join(".local/share/omarchy/config/starship.toml");
+    fs::create_dir_all(config_default.parent().unwrap()).unwrap();
+    fs::write(&config_default, "format = 'config-default'\n").unwrap();
 
-  let cfg_dir = env.home.join(".config/theme-manager");
-  fs::create_dir_all(&cfg_dir).unwrap();
-  write_toml(
-    &cfg_dir.join("config.toml"),
-    r#"[starship]
+    let cfg_dir = env.home.join(".config/theme-manager");
+    fs::create_dir_all(&cfg_dir).unwrap();
+    write_toml(
+        &cfg_dir.join("config.toml"),
+        r#"[starship]
 default_mode = "named"
 default_name = "omarchy-default"
 "#,
-  );
+    );
 
-  let mut cmd = cmd_with_env(&env);
-  cmd.env_remove("THEME_MANAGER_SKIP_APPS");
-  cmd.args(["set", "theme-a"]);
-  cmd.assert().success();
+    let mut cmd = cmd_with_env(&env);
+    cmd.env_remove("THEME_MANAGER_SKIP_APPS");
+    cmd.args(["set", "theme-a"]);
+    cmd.assert().success();
 
-  let link_path = env.home.join(".config/starship-themes/omarchy-default.toml");
-  let target = fs::read_link(&link_path).unwrap();
-  assert_eq!(target, config_default);
+    let link_path = env
+        .home
+        .join(".config/starship-themes/omarchy-default.toml");
+    let target = fs::read_link(&link_path).unwrap();
+    assert_eq!(target, config_default);
 }
 
 #[test]
 fn starship_missing_omarchy_default_errors_when_requested() {
-  let env = setup_env();
-  add_omarchy_stubs(&env.bin);
-  let themes = omarchy_dir(&env.home).join("themes");
-  fs::create_dir_all(themes.join("theme-a")).unwrap();
+    let env = setup_env();
+    add_omarchy_stubs(&env.bin);
+    let themes = omarchy_dir(&env.home).join("themes");
+    fs::create_dir_all(themes.join("theme-a")).unwrap();
 
-  let cfg_dir = env.home.join(".config/theme-manager");
-  fs::create_dir_all(&cfg_dir).unwrap();
-  write_toml(
-    &cfg_dir.join("config.toml"),
-    r#"[starship]
+    let cfg_dir = env.home.join(".config/theme-manager");
+    fs::create_dir_all(&cfg_dir).unwrap();
+    write_toml(
+        &cfg_dir.join("config.toml"),
+        r#"[starship]
 default_mode = "named"
 default_name = "omarchy-default"
 "#,
-  );
+    );
 
-  let mut cmd = cmd_with_env(&env);
-  cmd.env_remove("THEME_MANAGER_SKIP_APPS");
-  cmd.args(["set", "theme-a"]);
-  cmd
-    .assert()
-    .failure()
-    .stderr(predicates::str::contains("starship theme not found"));
+    let mut cmd = cmd_with_env(&env);
+    cmd.env_remove("THEME_MANAGER_SKIP_APPS");
+    cmd.args(["set", "theme-a"]);
+    cmd.assert()
+        .failure()
+        .stderr(predicates::str::contains("starship theme not found"));
 }

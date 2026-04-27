@@ -9,7 +9,7 @@ All notable changes to this project are documented in this file.
 - Added Foot terminal image preview support in browse mode via a Sixel backend (using `chafa`).
 - Added preview-backend detection precedence tests (`Kitty` -> `Sixel` -> `Chafa` -> `None`).
 - Fixed browse-mode image previews to render reliably again with terminal image backends and broadened preview discovery to common image extensions (`png`, `jpg`, `jpeg`, `webp`).
-- Made notification reloads tolerate missing or stopped `mako`, and prefer `swaync-client --reload-config` when SwayNC is installed.
+- Made notification reloads apply to running SwayNC and/or Mako daemons, while still falling back to installed reload clients when no active daemon is detected.
 
 ## 0.3.3
 

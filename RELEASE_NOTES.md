@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Added Foot terminal image previews in browse mode via Sixel output (powered by `chafa`).
+- Added backend-detection regression coverage for preview fallback precedence.
+
 ## 0.3.3
 
 - Unified Omarchy default resolution for Waybar, Walker, Hyprlock, and Starship through a shared resolver.

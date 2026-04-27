@@ -74,17 +74,42 @@ build_from_source() {
 }
 
 mkdir -p "${TARGET_DIR}"
+PATH_UPDATE_SKIPPED=0
+PATH_UPDATE_SKIPPED_FILES=""
+
+mark_path_update_skipped() {
+  local file="$1"
+  PATH_UPDATE_SKIPPED=1
+  if [ -z "${PATH_UPDATE_SKIPPED_FILES}" ]; then
+    PATH_UPDATE_SKIPPED_FILES="${file}"
+  else
+    PATH_UPDATE_SKIPPED_FILES="${PATH_UPDATE_SKIPPED_FILES}, ${file}"
+  fi
+}
 
 ensure_path_entry() {
   local file="$1"
   local path_line='export PATH="$HOME/.local/bin:$PATH"'
-  if [ -f "${file}" ] && grep -q 'HOME/\.local/bin' "${file}"; then
+  if [ -f "${file}" ] && [ -r "${file}" ] && grep -q 'HOME/\.local/bin' "${file}"; then
     return 0
   fi
   if [ ! -f "${file}" ]; then
-    touch "${file}"
+    if ! touch "${file}" 2>/dev/null; then
+      echo "theme-manager: warning: cannot create ${file}; skipping PATH update" >&2
+      mark_path_update_skipped "${file}"
+      return 0
+    fi
   fi
-  printf '\n%s\n' "${path_line}" >> "${file}"
+  if [ ! -w "${file}" ]; then
+    echo "theme-manager: warning: cannot write ${file}; skipping PATH update" >&2
+    mark_path_update_skipped "${file}"
+    return 0
+  fi
+  if ! printf '\n%s\n' "${path_line}" >> "${file}" 2>/dev/null; then
+    echo "theme-manager: warning: failed to update ${file}; skipping PATH update" >&2
+    mark_path_update_skipped "${file}"
+    return 0
+  fi
 }
 
 os="$(uname -s)"
@@ -104,4 +129,9 @@ mkdir -p "${HOME}/.config/starship-themes"
 ensure_path_entry "${HOME}/.profile"
 ensure_path_entry "${HOME}/.bashrc"
 ensure_path_entry "${HOME}/.zshrc"
-echo "theme-manager: ensured ~/.local/bin is on PATH in ~/.profile, ~/.bashrc, and ~/.zshrc"
+if [ "${PATH_UPDATE_SKIPPED}" -eq 1 ]; then
+  echo "theme-manager: warning: could not update PATH in: ${PATH_UPDATE_SKIPPED_FILES}" >&2
+  echo 'theme-manager: add ~/.local/bin to PATH manually: export PATH="$HOME/.local/bin:$PATH"' >&2
+else
+  echo "theme-manager: ensured ~/.local/bin is on PATH in ~/.profile, ~/.bashrc, and ~/.zshrc"
+fi

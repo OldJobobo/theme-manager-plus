@@ -43,7 +43,8 @@ source ~/.profile
   - or configured via `OMARCHY_BIN_DIR`
 - Optional:
   - `starship` (for Starship presets or themes)
-  - `kitty` or `chafa` (for browse previews)
+  - `kitty` (for Kitty graphics previews)
+  - `chafa` (for text previews and Foot Sixel image previews)
   - `awww` (for wallpaper transitions; daemon is **not** auto-started)
 
 ---
