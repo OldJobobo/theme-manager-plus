@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## 0.3.4
+
 - Stopped warning about missing `omarchy-restart-hyprlock` on systems where Omarchy does not ship that helper; Hyprlock config still updates normally.
 - Made `install.sh` skip unwritable shell rc files (`~/.profile`, `~/.bashrc`, `~/.zshrc`) with warnings instead of failing with `Permission denied`.
 - Added Foot terminal image preview support in browse mode via a Sixel backend (using `chafa`).

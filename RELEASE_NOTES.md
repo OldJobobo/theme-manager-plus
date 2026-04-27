@@ -2,8 +2,13 @@
 
 ## Unreleased
 
+## 0.3.4
+
 - Added Foot terminal image previews in browse mode via Sixel output (powered by `chafa`).
-- Added backend-detection regression coverage for preview fallback precedence.
+- Fixed browse-mode image previews to render reliably again with terminal image backends and broadened preview discovery to common image extensions (`png`, `jpg`, `jpeg`, `webp`).
+- Stopped warning about missing `omarchy-restart-hyprlock` on systems where Omarchy does not ship that helper; Hyprlock config still updates normally.
+- Made notification reloads apply to running SwayNC and/or Mako daemons, while still falling back to installed reload clients when no active daemon is detected.
+- Made `install.sh` skip unwritable shell rc files (`~/.profile`, `~/.bashrc`, `~/.zshrc`) with warnings instead of failing with `Permission denied`.
 
 ## 0.3.3
 
