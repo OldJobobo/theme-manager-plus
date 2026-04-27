@@ -4,9 +4,13 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## 0.3.5
+
+- Stopped falling back to `makoctl reload` just because `makoctl` is installed; Mako is now reloaded only when the Mako daemon is active, avoiding DBus errors on SwayNC systems.
+
 ## 0.3.4
 
-- Stopped warning about missing `omarchy-restart-hyprlock` on systems where Omarchy does not ship that helper; Hyprlock config still updates normally.
+- Stopped calling the nonexistent `omarchy-restart-hyprlock` helper when applying Hyprlock themes; updated config is used on the next lock.
 - Made `install.sh` skip unwritable shell rc files (`~/.profile`, `~/.bashrc`, `~/.zshrc`) with warnings instead of failing with `Permission denied`.
 - Added Foot terminal image preview support in browse mode via a Sixel backend (using `chafa`).
 - Added preview-backend detection precedence tests (`Kitty` -> `Sixel` -> `Chafa` -> `None`).

@@ -303,9 +303,6 @@ fn reload_notifications(quiet: bool) {
     if command_exists("swaync-client") {
         reload_swaync(quiet);
     }
-    if command_exists("makoctl") {
-        reload_mako(quiet);
-    }
 }
 
 fn reload_swaync(quiet: bool) {
