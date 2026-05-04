@@ -98,6 +98,8 @@ pub fn run_optional(cmd: &str, args: &[&str], quiet: bool) -> Result<()> {
 /// Attempt `omarchy <group> <cmd>` via the unified CLI (v3.7.0+).
 /// Returns Ok(Some(())) on success, Ok(None) when omarchy is absent or the
 /// subcommand is unregistered (exit 127), and Err on a genuine failure.
+/// Stderr is always captured so that "Unknown Omarchy command" probe noise
+/// never reaches the user; it is re-emitted only on genuine failures.
 fn try_omarchy_unified(group: &str, cmd: &str, args: &[&str], quiet: bool) -> Result<Option<()>> {
     if !command_exists("omarchy") {
         return Ok(None);
@@ -106,18 +108,22 @@ fn try_omarchy_unified(group: &str, cmd: &str, args: &[&str], quiet: bool) -> Re
     all_args.extend_from_slice(args);
     let mut command = Command::new("omarchy");
     command.args(&all_args);
+    command.stderr(Stdio::piped());
     if quiet {
-        command.stdout(Stdio::null()).stderr(Stdio::null());
+        command.stdout(Stdio::null());
     }
-    let status = command.status()?;
-    if status.success() {
+    let output = command.output()?;
+    if output.status.success() {
         return Ok(Some(()));
     }
-    // Exit 127 = unknown subcommand in the omarchy unified CLI; fall back to legacy.
-    if status.code() == Some(127) {
+    // Exit 127 = unknown subcommand; fall back to legacy silently.
+    if output.status.code() == Some(127) {
         return Ok(None);
     }
-    Err(anyhow!("omarchy exited with {status}"))
+    if !quiet && !output.stderr.is_empty() {
+        let _ = std::io::Write::write_all(&mut std::io::stderr(), &output.stderr);
+    }
+    Err(anyhow!("omarchy exited with {}", output.status))
 }
 
 /// Run an omarchy subcommand, preferring `omarchy <group> <cmd>` (v3.7.0+)
