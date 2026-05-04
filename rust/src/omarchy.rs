@@ -95,26 +95,47 @@ pub fn run_optional(cmd: &str, args: &[&str], quiet: bool) -> Result<()> {
     run_command(cmd, args, quiet)
 }
 
-/// Run an omarchy subcommand via `omarchy <group> <cmd>` when the unified CLI
-/// is available (v3.7.0+), falling back to the legacy `omarchy-<group>-<cmd>`
-/// script on older installs. Silently skips if neither is found.
+/// Attempt `omarchy <group> <cmd>` via the unified CLI (v3.7.0+).
+/// Returns Ok(Some(())) on success, Ok(None) when omarchy is absent or the
+/// subcommand is unregistered (exit 127), and Err on a genuine failure.
+fn try_omarchy_unified(group: &str, cmd: &str, args: &[&str], quiet: bool) -> Result<Option<()>> {
+    if !command_exists("omarchy") {
+        return Ok(None);
+    }
+    let mut all_args = vec![group, cmd];
+    all_args.extend_from_slice(args);
+    let mut command = Command::new("omarchy");
+    command.args(&all_args);
+    if quiet {
+        command.stdout(Stdio::null()).stderr(Stdio::null());
+    }
+    let status = command.status()?;
+    if status.success() {
+        return Ok(Some(()));
+    }
+    // Exit 127 = unknown subcommand in the omarchy unified CLI; fall back to legacy.
+    if status.code() == Some(127) {
+        return Ok(None);
+    }
+    Err(anyhow!("omarchy exited with {status}"))
+}
+
+/// Run an omarchy subcommand, preferring `omarchy <group> <cmd>` (v3.7.0+)
+/// and falling back to the legacy `omarchy-<group>-<cmd>` script. Silently
+/// skips if neither is found.
 pub fn run_omarchy_optional(group: &str, cmd: &str, args: &[&str], quiet: bool) -> Result<()> {
-    if command_exists("omarchy") {
-        let mut all_args = vec![group, cmd];
-        all_args.extend_from_slice(args);
-        return run_command("omarchy", &all_args, quiet);
+    if try_omarchy_unified(group, cmd, args, quiet)?.is_some() {
+        return Ok(());
     }
     let legacy = format!("omarchy-{group}-{cmd}");
     run_optional(&legacy, args, quiet)
 }
 
-/// Same as `run_omarchy_optional` but fails if neither the unified CLI nor the
-/// legacy script is found in PATH.
+/// Same as `run_omarchy_optional` but fails if neither the unified CLI
+/// subcommand nor the legacy script is found in PATH.
 pub fn run_omarchy_required(group: &str, cmd: &str, args: &[&str], quiet: bool) -> Result<()> {
-    if command_exists("omarchy") {
-        let mut all_args = vec![group, cmd];
-        all_args.extend_from_slice(args);
-        return run_command("omarchy", &all_args, quiet);
+    if try_omarchy_unified(group, cmd, args, quiet)?.is_some() {
+        return Ok(());
     }
     let legacy = format!("omarchy-{group}-{cmd}");
     run_required(&legacy, args, quiet)
