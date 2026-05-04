@@ -193,12 +193,12 @@ pub fn restart_walker_only(quiet: bool) -> Result<()> {
 }
 
 pub fn restart_hyprlock_only(quiet: bool) -> Result<()> {
+    let _ = quiet;
     if command_exists("pkill") {
         let _ = run_command("pkill", &["-x", "hyprlock"], true);
     }
-    // Omarchy currently provides `omarchy-system-lock` and launches hyprlock on demand,
-    // but does not ship a dedicated restart helper on all installs.
-    run_omarchy_optional("restart", "hyprlock", &[], quiet)
+    // Omarchy launches hyprlock on demand; no restart helper exists or is needed.
+    Ok(())
 }
 
 pub fn restart_waybar_only(
