@@ -95,6 +95,31 @@ pub fn run_optional(cmd: &str, args: &[&str], quiet: bool) -> Result<()> {
     run_command(cmd, args, quiet)
 }
 
+/// Run an omarchy subcommand via `omarchy <group> <cmd>` when the unified CLI
+/// is available (v3.7.0+), falling back to the legacy `omarchy-<group>-<cmd>`
+/// script on older installs. Silently skips if neither is found.
+pub fn run_omarchy_optional(group: &str, cmd: &str, args: &[&str], quiet: bool) -> Result<()> {
+    if command_exists("omarchy") {
+        let mut all_args = vec![group, cmd];
+        all_args.extend_from_slice(args);
+        return run_command("omarchy", &all_args, quiet);
+    }
+    let legacy = format!("omarchy-{group}-{cmd}");
+    run_optional(&legacy, args, quiet)
+}
+
+/// Same as `run_omarchy_optional` but fails if neither the unified CLI nor the
+/// legacy script is found in PATH.
+pub fn run_omarchy_required(group: &str, cmd: &str, args: &[&str], quiet: bool) -> Result<()> {
+    if command_exists("omarchy") {
+        let mut all_args = vec![group, cmd];
+        all_args.extend_from_slice(args);
+        return run_command("omarchy", &all_args, quiet);
+    }
+    let legacy = format!("omarchy-{group}-{cmd}");
+    run_required(&legacy, args, quiet)
+}
+
 pub fn run_command(cmd: &str, args: &[&str], quiet: bool) -> Result<()> {
     let mut command = Command::new(cmd);
     command.args(args);
@@ -119,7 +144,7 @@ pub fn reload_components(
     waybar_restart: Option<RestartAction>,
     waybar_restart_logs: bool,
 ) -> Result<()> {
-    run_optional("omarchy-restart-terminal", &[], quiet)?;
+    run_omarchy_optional("restart", "terminal", &[], quiet)?;
     restart_waybar_only(quiet, waybar_restart, waybar_restart_logs)?;
     restart_walker_only(quiet)?;
     restart_hyprlock_only(quiet)?;
@@ -137,21 +162,16 @@ pub fn restart_walker_only(quiet: bool) -> Result<()> {
         let _ = run_command("pkill", &["-f", "walker --gapplication-service"], true);
         let _ = run_command("pkill", &["-x", "walker"], true);
     }
-    run_optional("omarchy-restart-walker", &[], quiet)
+    run_omarchy_optional("restart", "walker", &[], quiet)
 }
 
 pub fn restart_hyprlock_only(quiet: bool) -> Result<()> {
     if command_exists("pkill") {
         let _ = run_command("pkill", &["-x", "hyprlock"], true);
     }
-    if command_exists("omarchy-restart-hyprlock") {
-        return run_command("omarchy-restart-hyprlock", &[], quiet);
-    }
-
-    // Omarchy currently provides `omarchy-lock-screen` and launches hyprlock on demand,
+    // Omarchy currently provides `omarchy-system-lock` and launches hyprlock on demand,
     // but does not ship a dedicated restart helper on all installs.
-    let _ = quiet;
-    Ok(())
+    run_omarchy_optional("restart", "hyprlock", &[], quiet)
 }
 
 pub fn restart_waybar_only(
@@ -174,7 +194,7 @@ pub fn restart_waybar_only(
             }
         }
     } else {
-        run_optional("omarchy-restart-waybar", &[], quiet)?;
+        run_omarchy_optional("restart", "waybar", &[], quiet)?;
     }
     Ok(())
 }
@@ -254,7 +274,7 @@ fn start_swayosd(quiet: bool) -> Result<()> {
 
 fn restart_swayosd(quiet: bool) -> Result<()> {
     let before = pgrep_pids("swayosd-server");
-    if let Err(err) = run_optional("omarchy-restart-swayosd", &[], quiet) {
+    if let Err(err) = run_omarchy_optional("restart", "swayosd", &[], quiet) {
         if !quiet {
             eprintln!("theme-manager: swayosd restart command failed: {err}");
         }
@@ -428,10 +448,10 @@ fn restart_waybar_exec(config_path: &Path, style_path: &Path, quiet: bool) -> Re
 }
 
 pub fn apply_theme_setters(quiet: bool) -> Result<()> {
-    run_optional("omarchy-theme-set-gnome", &[], quiet)?;
-    run_optional("omarchy-theme-set-browser", &[], quiet)?;
-    run_optional("omarchy-theme-set-vscode", &[], quiet)?;
-    run_optional("omarchy-theme-set-obsidian", &[], quiet)?;
+    run_omarchy_optional("theme", "set-gnome", &[], quiet)?;
+    run_omarchy_optional("theme", "set-browser", &[], quiet)?;
+    run_omarchy_optional("theme", "set-vscode", &[], quiet)?;
+    run_omarchy_optional("theme", "set-obsidian", &[], quiet)?;
     Ok(())
 }
 

@@ -137,7 +137,7 @@ pub fn cmd_set(ctx: &CommandContext<'_>, theme_name: &str) -> Result<()> {
 
     let theme_source = resolve_link_target(&theme_path)?;
     let staging_dir = prepare_staging_dir(&theme_source, &ctx.config.current_theme_link)?;
-    omarchy::run_optional("omarchy-theme-set-templates", &[], ctx.quiet)?;
+    omarchy::run_omarchy_optional("theme", "set-templates", &[], ctx.quiet)?;
     replace_theme_dir(&staging_dir, &ctx.config.current_theme_link)?;
     write_theme_name(&ctx.config.current_theme_link, &normalized)?;
 
@@ -157,7 +157,7 @@ pub fn cmd_set(ctx: &CommandContext<'_>, theme_name: &str) -> Result<()> {
             cycle_background(ctx, &current_theme_dir)?;
             let _ = omarchy::run_awww_transition(ctx.config, ctx.quiet, ctx.debug_awww);
         } else {
-            omarchy::run_required("omarchy-theme-bg-next", &[], ctx.quiet)?;
+            omarchy::run_omarchy_required("theme", "bg-next", &[], ctx.quiet)?;
         }
         omarchy::reload_components(ctx.quiet, waybar_restart, ctx.config.waybar_restart_logs)?;
         omarchy::apply_theme_setters(ctx.quiet)?;
@@ -221,7 +221,7 @@ pub fn cmd_bg_next(config: &ResolvedConfig, debug_awww: bool) -> Result<()> {
         cycle_background(&ctx, &theme_path)?;
         let _ = omarchy::run_awww_transition(config, false, debug_awww);
     } else {
-        omarchy::run_required("omarchy-theme-bg-next", &[], false)?;
+        omarchy::run_omarchy_required("theme", "bg-next", &[], false)?;
     }
     Ok(())
 }
