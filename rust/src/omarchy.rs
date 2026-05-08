@@ -100,7 +100,13 @@ pub fn run_optional(cmd: &str, args: &[&str], quiet: bool) -> Result<()> {
 /// subcommand is unregistered (exit 127), and Err on a genuine failure.
 /// Stderr is always captured so that "Unknown Omarchy command" probe noise
 /// never reaches the user; it is re-emitted only on genuine failures.
-fn try_omarchy_unified(group: &str, cmd: &str, args: &[&str], quiet: bool) -> Result<Option<()>> {
+fn try_omarchy_unified(
+    group: &str,
+    cmd: &str,
+    args: &[&str],
+    quiet: bool,
+    emit_stderr: bool,
+) -> Result<Option<()>> {
     if !command_exists("omarchy") {
         return Ok(None);
     }
@@ -120,7 +126,7 @@ fn try_omarchy_unified(group: &str, cmd: &str, args: &[&str], quiet: bool) -> Re
     if output.status.code() == Some(127) {
         return Ok(None);
     }
-    if !quiet && !output.stderr.is_empty() {
+    if emit_stderr && !quiet && !output.stderr.is_empty() {
         let _ = std::io::Write::write_all(&mut std::io::stderr(), &output.stderr);
     }
     Err(anyhow!("omarchy exited with {}", output.status))
@@ -130,17 +136,35 @@ fn try_omarchy_unified(group: &str, cmd: &str, args: &[&str], quiet: bool) -> Re
 /// and falling back to the legacy `omarchy-<group>-<cmd>` script. Silently
 /// skips if neither is found.
 pub fn run_omarchy_optional(group: &str, cmd: &str, args: &[&str], quiet: bool) -> Result<()> {
-    if try_omarchy_unified(group, cmd, args, quiet)?.is_some() {
+    match try_omarchy_unified(group, cmd, args, quiet, false) {
+        Ok(Some(())) => return Ok(()),
+        Ok(None) => {}
+        Err(err) => {
+            if !quiet {
+                eprintln!(
+                    "theme-manager: optional omarchy {group} {cmd} failed; continuing: {err}"
+                );
+            }
+            return Ok(());
+        }
+    }
+
+    let legacy = format!("omarchy-{group}-{cmd}");
+    if !command_exists(&legacy) {
         return Ok(());
     }
-    let legacy = format!("omarchy-{group}-{cmd}");
-    run_optional(&legacy, args, quiet)
+    if let Err(err) = run_command(&legacy, args, quiet) {
+        if !quiet {
+            eprintln!("theme-manager: optional {legacy} failed; continuing: {err}");
+        }
+    }
+    Ok(())
 }
 
 /// Same as `run_omarchy_optional` but fails if neither the unified CLI
 /// subcommand nor the legacy script is found in PATH.
 pub fn run_omarchy_required(group: &str, cmd: &str, args: &[&str], quiet: bool) -> Result<()> {
-    if try_omarchy_unified(group, cmd, args, quiet)?.is_some() {
+    if try_omarchy_unified(group, cmd, args, quiet, true)?.is_some() {
         return Ok(());
     }
     let legacy = format!("omarchy-{group}-{cmd}");
@@ -176,7 +200,12 @@ pub fn reload_components(
     restart_walker_only(quiet)?;
     restart_hyprlock_only(quiet)?;
     restart_swayosd(quiet)?;
+    run_omarchy_optional("restart", "hyprctl", &[], quiet)?;
     run_optional("hyprctl", &["reload"], quiet)?;
+    run_omarchy_optional("restart", "btop", &[], quiet)?;
+    run_omarchy_optional("restart", "opencode", &[], quiet)?;
+    run_omarchy_optional("restart", "mako", &[], quiet)?;
+    run_omarchy_optional("restart", "helix", &[], quiet)?;
     reload_notifications(quiet);
     if command_exists("pkill") {
         let _ = run_command("pkill", &["-SIGUSR2", "btop"], true);
@@ -479,6 +508,7 @@ pub fn apply_theme_setters(quiet: bool) -> Result<()> {
     run_omarchy_optional("theme", "set-browser", &[], quiet)?;
     run_omarchy_optional("theme", "set-vscode", &[], quiet)?;
     run_omarchy_optional("theme", "set-obsidian", &[], quiet)?;
+    run_omarchy_optional("theme", "set-keyboard", &[], quiet)?;
     Ok(())
 }
 

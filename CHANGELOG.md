@@ -4,6 +4,15 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Added Omarchy 3.7 unlock theme support:
+  - `theme-manager unlock list`
+  - `theme-manager unlock set <theme>`
+  - `theme-manager unlock reset`
+- Added an Unlock tab to the TUI with `No Unlock change`, `Default`, and discovered unlock themes with previews.
+- Added compatibility with Omarchy 3.7 grouped `omarchy plymouth ...` commands while retaining legacy `omarchy-plymouth-*` fallback.
+- Updated the apply pipeline for Omarchy 3.7 restart/setter coverage (`hyprctl`, `btop`, `opencode`, `mako`, `helix`, and keyboard theme setter).
+- Updated the Hyprlock standalone test to assert the current no-`omarchy-restart-hyprlock` behavior.
+
 ## 0.3.5
 
 - Silenced speculative notification reload failures so systems with both SwayNC and `makoctl` installed do not show Mako DBus errors.

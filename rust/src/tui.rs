@@ -34,6 +34,7 @@ use crate::presets;
 use crate::preview;
 use crate::starship;
 use crate::theme_ops;
+use crate::unlock;
 use crate::walker;
 use crate::waybar;
 
@@ -53,6 +54,7 @@ enum BrowseTab {
     Waybar,
     Walker,
     Hyprlock,
+    Unlock,
     Starship,
     Presets,
     Review,
@@ -65,6 +67,7 @@ pub struct BrowseSelection {
     pub waybar: WaybarSelection,
     pub walker: WalkerSelection,
     pub hyprlock: HyprlockSelection,
+    pub unlock: UnlockSelection,
     pub starship: StarshipSelection,
 }
 
@@ -89,6 +92,13 @@ pub enum HyprlockSelection {
     NoChange,
     None,
     Auto,
+    Named(String),
+}
+
+#[derive(Debug)]
+pub enum UnlockSelection {
+    NoChange,
+    Default,
     Named(String),
 }
 
@@ -346,7 +356,7 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
     let mut terminal = setup_terminal()?;
     let mut tab = BrowseTab::Theme;
     let tab_titles = [
-        "Theme", "Waybar", "Walker", "Hyprlock", "Starship", "Review", "Presets",
+        "Theme", "Waybar", "Walker", "Hyprlock", "Unlock", "Starship", "Review", "Presets",
     ];
     let mut tab_ranges: Vec<(u16, u16, usize)> = Vec::new();
     let mut active_search_area = Rect::ZERO;
@@ -378,14 +388,17 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
     let mut waybar_items = build_waybar_items(config, &theme_path)?;
     let mut walker_items = build_walker_items(config, &theme_path)?;
     let mut hyprlock_items = build_hyprlock_items(config, &theme_path)?;
+    let unlock_items = build_unlock_items(config)?;
     let mut starship_items = build_starship_items(config, &theme_path)?;
     let mut waybar_state = PickerState::new();
     let mut walker_state = PickerState::new();
     let mut hyprlock_state = PickerState::new();
+    let mut unlock_state = PickerState::new();
     let mut starship_state = PickerState::new();
     rebuild_filtered(&mut waybar_state, &waybar_items);
     rebuild_filtered(&mut walker_state, &walker_items);
     rebuild_filtered(&mut hyprlock_state, &hyprlock_items);
+    rebuild_filtered(&mut unlock_state, &unlock_items);
     rebuild_filtered(&mut starship_state, &starship_items);
 
     let mut preset_file = presets::load_presets()?;
@@ -523,6 +536,30 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                     active_code_inner = areas.code_inner;
                     active_code_area = areas.code_area;
                 }
+                BrowseTab::Unlock => {
+                    let areas = render_picker(
+                        frame,
+                        content_area,
+                        "Select Unlock",
+                        "Image Preview",
+                        &unlock_items,
+                        &mut unlock_state,
+                        &backend,
+                        |idx| build_unlock_code_preview(config, &unlock_items[idx]),
+                        |idx| unlock_items[idx].preview.clone(),
+                        |_idx| None,
+                        true,
+                        if status_active && status_tab == BrowseTab::Unlock {
+                            Some(status_message.as_str())
+                        } else {
+                            None
+                        },
+                    );
+                    active_search_area = areas.search_area;
+                    active_list_inner = areas.list_inner;
+                    active_code_inner = areas.code_inner;
+                    active_code_area = areas.code_area;
+                }
                 BrowseTab::Starship => {
                     let areas = render_picker(
                         frame,
@@ -585,6 +622,7 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                         current_waybar_label(&waybar_items, &waybar_state),
                         current_walker_label(&walker_items, &walker_state),
                         current_hyprlock_label(&hyprlock_items, &hyprlock_state),
+                        current_unlock_label(&unlock_items, &unlock_state),
                         current_starship_label(&starship_items, &starship_state),
                     );
                 }
@@ -598,6 +636,7 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                 current_waybar_label(&waybar_items, &waybar_state),
                 current_walker_label(&walker_items, &walker_state),
                 current_hyprlock_label(&hyprlock_items, &hyprlock_state),
+                current_unlock_label(&unlock_items, &unlock_state),
                 current_starship_label(&starship_items, &starship_state),
                 status_active.then_some(status_message.as_str()),
                 preset_save_active,
@@ -750,6 +789,7 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                             &mut waybar_state,
                             &mut walker_state,
                             &mut hyprlock_state,
+                            &mut unlock_state,
                             &mut starship_state,
                             &mut preset_state,
                         ) {
@@ -783,12 +823,14 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                                         &mut waybar_state,
                                         &mut walker_state,
                                         &mut hyprlock_state,
+                                        &mut unlock_state,
                                         &mut starship_state,
                                         &mut preset_state,
                                         &theme_items,
                                         &waybar_items,
                                         &walker_items,
                                         &hyprlock_items,
+                                        &unlock_items,
                                         &starship_items,
                                         &preset_items,
                                     );
@@ -804,6 +846,17 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                             return Ok(None);
                         }
                         if key.code == KeyCode::Tab {
+                            clear_active_preview(
+                                &backend,
+                                tab,
+                                &mut theme_state,
+                                &mut waybar_state,
+                                &mut walker_state,
+                                &mut hyprlock_state,
+                                &mut unlock_state,
+                                &mut starship_state,
+                                &mut preset_state,
+                            );
                             tab = next_tab(tab);
                             clear_kitty_preview(&backend);
                             mark_force_clear(
@@ -811,6 +864,7 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                                 &mut waybar_state,
                                 &mut walker_state,
                                 &mut hyprlock_state,
+                                &mut unlock_state,
                                 &mut starship_state,
                                 &mut preset_state,
                             );
@@ -820,6 +874,17 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                             continue 'event_loop;
                         }
                         if key.code == KeyCode::BackTab {
+                            clear_active_preview(
+                                &backend,
+                                tab,
+                                &mut theme_state,
+                                &mut waybar_state,
+                                &mut walker_state,
+                                &mut hyprlock_state,
+                                &mut unlock_state,
+                                &mut starship_state,
+                                &mut preset_state,
+                            );
                             tab = previous_tab(tab);
                             clear_kitty_preview(&backend);
                             mark_force_clear(
@@ -827,6 +892,7 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                                 &mut waybar_state,
                                 &mut walker_state,
                                 &mut hyprlock_state,
+                                &mut unlock_state,
                                 &mut starship_state,
                                 &mut preset_state,
                             );
@@ -862,6 +928,7 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                                     &hyprlock_items,
                                     &hyprlock_state,
                                 ),
+                                unlock: current_unlock_selection(&unlock_items, &unlock_state),
                                 starship: current_starship_selection(
                                     &starship_items,
                                     &starship_state,
@@ -893,6 +960,17 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                             ) {
                                 Ok(()) => {
                                     status_message = "Preset loaded".to_string();
+                                    clear_active_preview(
+                                        &backend,
+                                        tab,
+                                        &mut theme_state,
+                                        &mut waybar_state,
+                                        &mut walker_state,
+                                        &mut hyprlock_state,
+                                        &mut unlock_state,
+                                        &mut starship_state,
+                                        &mut preset_state,
+                                    );
                                     tab = BrowseTab::Review;
                                     clear_kitty_preview(&backend);
                                     mark_force_clear(
@@ -900,6 +978,7 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                                         &mut waybar_state,
                                         &mut walker_state,
                                         &mut hyprlock_state,
+                                        &mut unlock_state,
                                         &mut starship_state,
                                         &mut preset_state,
                                     );
@@ -921,10 +1000,22 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                                 BrowseTab::Waybar => "Waybar selected".to_string(),
                                 BrowseTab::Walker => "Walker selected".to_string(),
                                 BrowseTab::Hyprlock => "Hyprlock selected".to_string(),
+                                BrowseTab::Unlock => "Unlock selected".to_string(),
                                 BrowseTab::Starship => "Starship selected".to_string(),
                                 BrowseTab::Presets => "Preset selected".to_string(),
                                 BrowseTab::Review => String::new(),
                             };
+                            clear_active_preview(
+                                &backend,
+                                tab,
+                                &mut theme_state,
+                                &mut waybar_state,
+                                &mut walker_state,
+                                &mut hyprlock_state,
+                                &mut unlock_state,
+                                &mut starship_state,
+                                &mut preset_state,
+                            );
                             tab = next_tab(tab);
                             if tab == BrowseTab::Review {
                                 clear_kitty_preview(&backend);
@@ -933,6 +1024,7 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                                     &mut waybar_state,
                                     &mut walker_state,
                                     &mut hyprlock_state,
+                                    &mut unlock_state,
                                     &mut starship_state,
                                     &mut preset_state,
                                 );
@@ -942,6 +1034,7 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                                 BrowseTab::Waybar => waybar_state.filtered_indices.len(),
                                 BrowseTab::Walker => walker_state.filtered_indices.len(),
                                 BrowseTab::Hyprlock => hyprlock_state.filtered_indices.len(),
+                                BrowseTab::Unlock => unlock_state.filtered_indices.len(),
                                 BrowseTab::Starship => starship_state.filtered_indices.len(),
                                 BrowseTab::Presets => preset_state.filtered_indices.len(),
                                 BrowseTab::Review => 0,
@@ -952,6 +1045,7 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                                 &mut waybar_state,
                                 &mut walker_state,
                                 &mut hyprlock_state,
+                                &mut unlock_state,
                                 &mut starship_state,
                                 &mut preset_state,
                             ) {
@@ -973,6 +1067,7 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                             BrowseTab::Waybar => waybar_state.filtered_indices.len(),
                             BrowseTab::Walker => walker_state.filtered_indices.len(),
                             BrowseTab::Hyprlock => hyprlock_state.filtered_indices.len(),
+                            BrowseTab::Unlock => unlock_state.filtered_indices.len(),
                             BrowseTab::Starship => starship_state.filtered_indices.len(),
                             BrowseTab::Presets => preset_state.filtered_indices.len(),
                             BrowseTab::Review => 0,
@@ -983,6 +1078,7 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                             &mut waybar_state,
                             &mut walker_state,
                             &mut hyprlock_state,
+                            &mut unlock_state,
                             &mut starship_state,
                             &mut preset_state,
                         ) {
@@ -1046,6 +1142,17 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                             }) {
                                 if let Some(index) = tab_index_from_click(&tab_ranges, mouse.column)
                                 {
+                                    clear_active_preview(
+                                        &backend,
+                                        tab,
+                                        &mut theme_state,
+                                        &mut waybar_state,
+                                        &mut walker_state,
+                                        &mut hyprlock_state,
+                                        &mut unlock_state,
+                                        &mut starship_state,
+                                        &mut preset_state,
+                                    );
                                     tab = tab_from_index(index);
                                     clear_kitty_preview(&backend);
                                     mark_force_clear(
@@ -1053,6 +1160,7 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                                         &mut waybar_state,
                                         &mut walker_state,
                                         &mut hyprlock_state,
+                                        &mut unlock_state,
                                         &mut starship_state,
                                         &mut preset_state,
                                     );
@@ -1068,6 +1176,7 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                                 BrowseTab::Waybar => waybar_state.filtered_indices.len(),
                                 BrowseTab::Walker => walker_state.filtered_indices.len(),
                                 BrowseTab::Hyprlock => hyprlock_state.filtered_indices.len(),
+                                BrowseTab::Unlock => unlock_state.filtered_indices.len(),
                                 BrowseTab::Starship => starship_state.filtered_indices.len(),
                                 BrowseTab::Presets => preset_state.filtered_indices.len(),
                                 BrowseTab::Review => 0,
@@ -1078,6 +1187,7 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                                 &mut waybar_state,
                                 &mut walker_state,
                                 &mut hyprlock_state,
+                                &mut unlock_state,
                                 &mut starship_state,
                                 &mut preset_state,
                             ) {
@@ -1106,6 +1216,7 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                                 BrowseTab::Waybar => waybar_state.filtered_indices.len(),
                                 BrowseTab::Walker => walker_state.filtered_indices.len(),
                                 BrowseTab::Hyprlock => hyprlock_state.filtered_indices.len(),
+                                BrowseTab::Unlock => unlock_state.filtered_indices.len(),
                                 BrowseTab::Starship => starship_state.filtered_indices.len(),
                                 BrowseTab::Presets => preset_state.filtered_indices.len(),
                                 BrowseTab::Review => 0,
@@ -1116,6 +1227,7 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                                 &mut waybar_state,
                                 &mut walker_state,
                                 &mut hyprlock_state,
+                                &mut unlock_state,
                                 &mut starship_state,
                                 &mut preset_state,
                             ) {
@@ -1140,6 +1252,7 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                                 BrowseTab::Waybar => waybar_state.filtered_indices.len(),
                                 BrowseTab::Walker => walker_state.filtered_indices.len(),
                                 BrowseTab::Hyprlock => hyprlock_state.filtered_indices.len(),
+                                BrowseTab::Unlock => unlock_state.filtered_indices.len(),
                                 BrowseTab::Starship => starship_state.filtered_indices.len(),
                                 BrowseTab::Presets => preset_state.filtered_indices.len(),
                                 BrowseTab::Review => 0,
@@ -1150,6 +1263,7 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                                 &mut waybar_state,
                                 &mut walker_state,
                                 &mut hyprlock_state,
+                                &mut unlock_state,
                                 &mut starship_state,
                                 &mut preset_state,
                             ) {
@@ -1449,6 +1563,35 @@ fn build_hyprlock_items(config: &ResolvedConfig, theme_path: &Path) -> Result<Ve
     Ok(items)
 }
 
+fn build_unlock_items(config: &ResolvedConfig) -> Result<Vec<LabeledItem>> {
+    let mut items = Vec::new();
+    items.push(OptionItem::with_kind(
+        "No Unlock change".to_string(),
+        "none".to_string(),
+        "none",
+        None,
+    ));
+
+    items.push(OptionItem::with_kind(
+        "Default".to_string(),
+        "default".to_string(),
+        "default",
+        omarchy_default_unlock_preview(config),
+    ));
+
+    for name in unlock::list_unlock_theme_entries(config)? {
+        let preview_path = unlock_theme_preview(config, &name);
+        items.push(OptionItem::with_kind(
+            display_theme_name(&name),
+            name,
+            "named",
+            preview_path,
+        ));
+    }
+
+    Ok(items)
+}
+
 fn build_walker_code_preview(
     config: &ResolvedConfig,
     theme_path: &Path,
@@ -1472,6 +1615,22 @@ fn build_walker_code_preview(
             if layout.is_file() {
                 parts.insert(0, ("layout.xml", layout, "xml"));
             }
+            load_multi_code_preview(&parts)
+        }
+    }
+}
+
+fn build_unlock_code_preview(config: &ResolvedConfig, item: &LabeledItem) -> Text<'static> {
+    match item.kind.as_str() {
+        "none" => Text::from("No Unlock change."),
+        "default" => Text::from(
+            "Restore the default Omarchy Plymouth and SDDM unlock theme.\n\nThis may prompt for sudo.",
+        ),
+        _ => {
+            let Some(theme_dir) = unlock_theme_dir(config, &item.value) else {
+                return Text::from("Unlock theme not found.");
+            };
+            let parts = vec![("colors.toml", theme_dir.join("colors.toml"), "toml")];
             load_multi_code_preview(&parts)
         }
     }
@@ -2174,6 +2333,7 @@ fn render_review(
     waybar_label: String,
     walker_label: String,
     hyprlock_label: String,
+    unlock_label: String,
     starship_label: String,
 ) {
     let lines = vec![
@@ -2183,6 +2343,7 @@ fn render_review(
         Line::from(format!("Waybar: {}", waybar_label)),
         Line::from(format!("Walker: {}", walker_label)),
         Line::from(format!("Hyprlock: {}", hyprlock_label)),
+        Line::from(format!("Unlock: {}", unlock_label)),
         Line::from(format!("Starship: {}", starship_label)),
         Line::from(""),
         Line::from("Apply: Ctrl+Enter"),
@@ -2203,6 +2364,7 @@ fn render_status_bar(
     waybar: String,
     walker: String,
     hyprlock: String,
+    unlock: String,
     starship: String,
     status: Option<&str>,
     save_active: bool,
@@ -2215,6 +2377,7 @@ fn render_status_bar(
         BrowseTab::Waybar => "Waybar",
         BrowseTab::Walker => "Walker",
         BrowseTab::Hyprlock => "Hyprlock",
+        BrowseTab::Unlock => "Unlock",
         BrowseTab::Starship => "Starship",
         BrowseTab::Presets => "Presets",
         BrowseTab::Review => "Review",
@@ -2233,6 +2396,7 @@ fn render_status_bar(
         Color::Black,
         Color::LightGreen,
     ));
+    segments.push((format!("Unlock: {unlock}"), Color::Black, Color::Gray));
     segments.push((
         format!("Starship: {starship}"),
         Color::Black,
@@ -2419,11 +2583,39 @@ fn clear_kitty_preview(backend: &PreviewBackend) {
     }
 }
 
+fn clear_picker_preview(backend: &PreviewBackend, state: &mut PickerState) {
+    if let Some(area) = state.last_image_area {
+        backend.render(None, area);
+    }
+    state.image_visible = false;
+    state.preview_dirty = false;
+    state.force_clear = true;
+}
+
+fn clear_active_preview(
+    backend: &PreviewBackend,
+    tab: BrowseTab,
+    theme: &mut PickerState,
+    waybar: &mut PickerState,
+    walker: &mut PickerState,
+    hyprlock: &mut PickerState,
+    unlock: &mut PickerState,
+    starship: &mut PickerState,
+    presets: &mut PickerState,
+) {
+    if let Some(state) = active_picker_mut(
+        tab, theme, waybar, walker, hyprlock, unlock, starship, presets,
+    ) {
+        clear_picker_preview(backend, state);
+    }
+}
+
 fn mark_force_clear(
     theme: &mut PickerState,
     waybar: &mut PickerState,
     walker: &mut PickerState,
     hyprlock: &mut PickerState,
+    unlock: &mut PickerState,
     starship: &mut PickerState,
     presets: &mut PickerState,
 ) {
@@ -2431,6 +2623,7 @@ fn mark_force_clear(
     waybar.force_clear = true;
     walker.force_clear = true;
     hyprlock.force_clear = true;
+    unlock.force_clear = true;
     starship.force_clear = true;
     presets.force_clear = true;
 }
@@ -2441,6 +2634,7 @@ fn active_picker_mut<'a>(
     waybar: &'a mut PickerState,
     walker: &'a mut PickerState,
     hyprlock: &'a mut PickerState,
+    unlock: &'a mut PickerState,
     starship: &'a mut PickerState,
     presets: &'a mut PickerState,
 ) -> Option<&'a mut PickerState> {
@@ -2449,6 +2643,7 @@ fn active_picker_mut<'a>(
         BrowseTab::Waybar => Some(waybar),
         BrowseTab::Walker => Some(walker),
         BrowseTab::Hyprlock => Some(hyprlock),
+        BrowseTab::Unlock => Some(unlock),
         BrowseTab::Starship => Some(starship),
         BrowseTab::Presets => Some(presets),
         BrowseTab::Review => None,
@@ -2461,12 +2656,14 @@ fn rebuild_active_filtered(
     waybar: &mut PickerState,
     walker: &mut PickerState,
     hyprlock: &mut PickerState,
+    unlock: &mut PickerState,
     starship: &mut PickerState,
     presets: &mut PickerState,
     theme_items: &[OptionItem],
     waybar_items: &[LabeledItem],
     walker_items: &[LabeledItem],
     hyprlock_items: &[LabeledItem],
+    unlock_items: &[LabeledItem],
     starship_items: &[LabeledItem],
     preset_items: &[PresetItem],
 ) {
@@ -2475,6 +2672,7 @@ fn rebuild_active_filtered(
         BrowseTab::Waybar => rebuild_filtered(waybar, waybar_items),
         BrowseTab::Walker => rebuild_filtered(walker, walker_items),
         BrowseTab::Hyprlock => rebuild_filtered(hyprlock, hyprlock_items),
+        BrowseTab::Unlock => rebuild_filtered(unlock, unlock_items),
         BrowseTab::Starship => rebuild_filtered(starship, starship_items),
         BrowseTab::Presets => rebuild_filtered(presets, preset_items),
         BrowseTab::Review => {}
@@ -2487,9 +2685,10 @@ fn tab_index(tab: BrowseTab) -> usize {
         BrowseTab::Waybar => 1,
         BrowseTab::Walker => 2,
         BrowseTab::Hyprlock => 3,
-        BrowseTab::Starship => 4,
-        BrowseTab::Review => 5,
-        BrowseTab::Presets => 6,
+        BrowseTab::Unlock => 4,
+        BrowseTab::Starship => 5,
+        BrowseTab::Review => 6,
+        BrowseTab::Presets => 7,
     }
 }
 
@@ -2499,18 +2698,19 @@ fn tab_from_index(index: usize) -> BrowseTab {
         1 => BrowseTab::Waybar,
         2 => BrowseTab::Walker,
         3 => BrowseTab::Hyprlock,
-        4 => BrowseTab::Starship,
-        5 => BrowseTab::Review,
+        4 => BrowseTab::Unlock,
+        5 => BrowseTab::Starship,
+        6 => BrowseTab::Review,
         _ => BrowseTab::Presets,
     }
 }
 
 fn next_tab(tab: BrowseTab) -> BrowseTab {
-    tab_from_index((tab_index(tab) + 1) % 7)
+    tab_from_index((tab_index(tab) + 1) % 8)
 }
 
 fn previous_tab(tab: BrowseTab) -> BrowseTab {
-    tab_from_index((tab_index(tab) + 6) % 7)
+    tab_from_index((tab_index(tab) + 7) % 8)
 }
 
 fn tab_index_from_click(ranges: &[(u16, u16, usize)], column: u16) -> Option<usize> {
@@ -2850,6 +3050,31 @@ fn current_hyprlock_selection(items: &[LabeledItem], state: &PickerState) -> Hyp
         "none" => HyprlockSelection::None,
         "theme" => HyprlockSelection::Auto,
         _ => HyprlockSelection::Named(items[index].value.clone()),
+    }
+}
+
+fn current_unlock_label(items: &[LabeledItem], state: &PickerState) -> String {
+    let index = match selected_item_index(state, items.len()) {
+        Some(index) => index,
+        None => return "No options".to_string(),
+    };
+    let item = &items[index];
+    match item.kind.as_str() {
+        "none" => "No change".to_string(),
+        "default" => "Default".to_string(),
+        _ => item.label.clone(),
+    }
+}
+
+fn current_unlock_selection(items: &[LabeledItem], state: &PickerState) -> UnlockSelection {
+    let index = match selected_item_index(state, items.len()) {
+        Some(index) => index,
+        None => return UnlockSelection::NoChange,
+    };
+    match items[index].kind.as_str() {
+        "none" => UnlockSelection::NoChange,
+        "default" => UnlockSelection::Default,
+        _ => UnlockSelection::Named(items[index].value.clone()),
     }
 }
 
@@ -3203,6 +3428,29 @@ fn list_hyprlock_themes(hyprlock_themes_dir: &Path) -> Result<Vec<String>> {
     }
     entries.sort();
     Ok(entries)
+}
+
+fn unlock_theme_dir(config: &ResolvedConfig, name: &str) -> Option<PathBuf> {
+    let mut roots = vec![config.theme_root_dir.clone()];
+    if let Some(root) = crate::omarchy::detect_omarchy_root(config) {
+        roots.push(root.join("themes"));
+    }
+    roots
+        .into_iter()
+        .map(|root| root.join(name))
+        .find(|path| path.join("preview-unlock.png").is_file())
+}
+
+fn unlock_theme_preview(config: &ResolvedConfig, name: &str) -> Option<PathBuf> {
+    unlock_theme_dir(config, name)
+        .map(|path| path.join("preview-unlock.png"))
+        .filter(|path| path.is_file())
+}
+
+fn omarchy_default_unlock_preview(config: &ResolvedConfig) -> Option<PathBuf> {
+    crate::omarchy::detect_omarchy_root(config)
+        .map(|root| root.join("default/plymouth/preview-unlock.png"))
+        .filter(|path| path.is_file())
 }
 
 fn list_starship_presets() -> Vec<String> {
@@ -3592,6 +3840,68 @@ mod tests {
     fn display_theme_name_formats_omarchy_default() {
         assert_eq!(display_theme_name("omarchy-default"), "Omarchy-Default");
         assert_eq!(display_theme_name("catppuccin"), "catppuccin");
+    }
+
+    #[test]
+    fn current_unlock_selection_maps_items() {
+        let items = vec![
+            OptionItem::with_kind(
+                "No Unlock change".to_string(),
+                "none".to_string(),
+                "none",
+                None,
+            ),
+            OptionItem::with_kind(
+                "Default".to_string(),
+                "default".to_string(),
+                "default",
+                None,
+            ),
+            OptionItem::with_kind(
+                "Tokyo Night".to_string(),
+                "tokyo-night".to_string(),
+                "named",
+                None,
+            ),
+        ];
+        let mut state = PickerState::new();
+        rebuild_filtered(&mut state, &items);
+
+        state.list_state.select(Some(0));
+        assert!(matches!(
+            current_unlock_selection(&items, &state),
+            UnlockSelection::NoChange
+        ));
+
+        state.list_state.select(Some(1));
+        assert!(matches!(
+            current_unlock_selection(&items, &state),
+            UnlockSelection::Default
+        ));
+
+        state.list_state.select(Some(2));
+        match current_unlock_selection(&items, &state) {
+            UnlockSelection::Named(name) => assert_eq!(name, "tokyo-night"),
+            other => panic!("unexpected unlock selection: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn clear_picker_preview_resets_image_state() {
+        let backend = PreviewBackend {
+            kind: PreviewBackendKind::None,
+        };
+        let mut state = PickerState::new();
+        state.last_image_area = Some(Rect::new(1, 2, 10, 5));
+        state.image_visible = true;
+        state.preview_dirty = true;
+        state.force_clear = false;
+
+        clear_picker_preview(&backend, &mut state);
+
+        assert!(!state.image_visible);
+        assert!(!state.preview_dirty);
+        assert!(state.force_clear);
     }
 
     #[test]

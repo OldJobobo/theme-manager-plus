@@ -34,6 +34,7 @@ pub enum Command {
     Waybar(WaybarArgs),
     Walker(WalkerArgs),
     Hyprlock(HyprlockArgs),
+    Unlock(UnlockArgs),
     Starship(StarshipArgs),
 }
 
@@ -145,6 +146,32 @@ pub struct WalkerArgs {
 #[derive(Parser, Debug)]
 pub struct HyprlockArgs {
     pub mode: String,
+    #[arg(short = 'q', long = "quiet")]
+    pub quiet: bool,
+}
+
+#[derive(Parser, Debug)]
+pub struct UnlockArgs {
+    #[command(subcommand)]
+    pub command: UnlockCommand,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum UnlockCommand {
+    List,
+    Set(UnlockSetArgs),
+    Reset(UnlockResetArgs),
+}
+
+#[derive(Parser, Debug)]
+pub struct UnlockSetArgs {
+    pub theme: String,
+    #[arg(short = 'q', long = "quiet")]
+    pub quiet: bool,
+}
+
+#[derive(Parser, Debug)]
+pub struct UnlockResetArgs {
     #[arg(short = 'q', long = "quiet")]
     pub quiet: bool,
 }

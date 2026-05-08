@@ -13,10 +13,11 @@ pub mod preview;
 pub mod starship;
 pub mod theme_ops;
 pub mod tui;
+pub mod unlock;
 pub mod walker;
 pub mod waybar;
 
-use cli::{Command, PresetCommand};
+use cli::{Command, PresetCommand, UnlockCommand};
 use config::ResolvedConfig;
 use theme_ops::{
     hyprlock_from_defaults, starship_from_defaults, walker_from_defaults, waybar_from_defaults,
@@ -86,6 +87,16 @@ pub fn run(cli: cli::Cli) -> Result<()> {
         Command::Browse(args) => {
             let quiet = args.quiet || config.quiet_default;
             if let Some(selection) = tui::browse(&config, quiet)? {
+                if !quiet {
+                    if selection.no_theme_change {
+                        println!("theme-manager: applying selected component changes");
+                    } else {
+                        println!(
+                            "theme-manager: applying theme {}",
+                            paths::title_case_theme(&selection.theme)
+                        );
+                    }
+                }
                 let (waybar_mode, waybar_name) = match selection.waybar {
                     tui::WaybarSelection::NoChange => (WaybarMode::None, None),
                     tui::WaybarSelection::None => (WaybarMode::None, None),
@@ -138,6 +149,27 @@ pub fn run(cli: cli::Cli) -> Result<()> {
                     }
                 } else {
                     theme_ops::cmd_set(&ctx, &selection.theme)?;
+                }
+                match selection.unlock {
+                    tui::UnlockSelection::NoChange => {}
+                    tui::UnlockSelection::Default => {
+                        if !quiet {
+                            println!("theme-manager: applying default unlock theme");
+                        }
+                        unlock::cmd_unlock_reset(quiet)?;
+                    }
+                    tui::UnlockSelection::Named(name) => {
+                        if !quiet {
+                            println!(
+                                "theme-manager: applying unlock theme {}",
+                                paths::title_case_theme(&name)
+                            );
+                        }
+                        unlock::cmd_unlock_set(&config, &name, quiet)?;
+                    }
+                }
+                if !quiet {
+                    println!("theme-manager: apply complete");
                 }
             }
         }
@@ -252,6 +284,19 @@ pub fn run(cli: cli::Cli) -> Result<()> {
                 cli.debug_awww,
             )?;
         }
+        Command::Unlock(args) => match args.command {
+            UnlockCommand::List => {
+                unlock::cmd_unlock_list(&config)?;
+            }
+            UnlockCommand::Set(set_args) => {
+                let quiet = set_args.quiet || config.quiet_default;
+                unlock::cmd_unlock_set(&config, &set_args.theme, quiet)?;
+            }
+            UnlockCommand::Reset(reset_args) => {
+                let quiet = reset_args.quiet || config.quiet_default;
+                unlock::cmd_unlock_reset(quiet)?;
+            }
+        },
         Command::Starship(args) => {
             let mode = parse_starship_spec(&args.mode, &config)?;
             let starship_mode = match mode {

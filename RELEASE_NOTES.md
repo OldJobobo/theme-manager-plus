@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Added `theme-manager unlock list|set|reset` and a TUI Unlock tab for Omarchy 3.7 boot unlock themes, delegating apply/reset work to Omarchy’s Plymouth commands.
+- Theme application now includes the new Omarchy 3.7 restart/app-theme steps while keeping legacy command fallback.
+
 ## 0.3.5
 
 - Silenced speculative notification reload failures so systems with both SwayNC and `makoctl` installed do not show Mako DBus errors.

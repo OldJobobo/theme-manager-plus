@@ -82,10 +82,11 @@ curl -fsSL https://raw.githubusercontent.com/OldJobobo/theme-manager-plus/master
 - `theme-manager set <Theme> -w` — switch theme and apply Waybar
 - `theme-manager set <Theme> -k` — switch theme and apply bundled Walker theme
 - `theme-manager set <Theme> --hyprlock` — switch theme and apply bundled Hyprlock theme
-- `theme-manager browse` — interactive selector (theme + Waybar + Walker + Hyprlock + Starship)
+- `theme-manager browse` — interactive selector (theme + Waybar + Walker + Hyprlock + Unlock + Starship)
 - `theme-manager waybar <mode>` — apply Waybar only
 - `theme-manager walker <mode>` — apply Walker only
 - `theme-manager hyprlock <mode>` — apply Hyprlock only
+- `theme-manager unlock list|set|reset` — list or apply Omarchy 3.7 boot unlock themes
 - `theme-manager starship <mode>` — apply Starship only
 - `theme-manager preset save|load|list|remove`
 - `theme-manager version`
@@ -112,7 +113,7 @@ Switch themes.
 
 Full-screen selector with previews.
 
-- Tabs: **Theme**, **Waybar**, **Walker**, **Hyprlock**, **Starship**, **Presets**, **Review**
+- Tabs: **Theme**, **Waybar**, **Walker**, **Hyprlock**, **Unlock**, **Starship**, **Presets**, **Review**
 - Apply with **Ctrl+Enter** by default
 - Includes a **“No theme change”** option
 - Component tabs include **“No Waybar change”**, **“No Walker change”**, **“No Hyprlock change”**, and **“No Starship change”** (leave current config as-is)
@@ -209,6 +210,18 @@ Modes:
 - `auto`
 - `none`
 - `<name>` (shared Hyprlock theme)
+
+---
+
+### `unlock list|set|reset`
+
+Manage Omarchy 3.7 boot unlock themes through Omarchy’s Plymouth commands.
+
+- `unlock list`: list themes that provide `preview-unlock.png`, plus `Default`
+- `unlock set <theme>`: apply a theme’s `unlock.png` using `omarchy plymouth set-by-theme`
+- `unlock set Default`: same as `unlock reset`
+- `unlock reset`: restore the shipped Omarchy Plymouth/SDDM unlock theme
+- Applying or resetting may prompt for sudo because Omarchy rebuilds boot/login assets.
 
 ---
 
@@ -334,12 +347,20 @@ Behavior:
 Theme Manager Plus **calls Omarchy’s own scripts** to stay compatible.
 
 Scripts invoked include:
+- `omarchy` grouped commands when available (Omarchy 3.7+)
 - `omarchy-theme-bg-next`
 - `omarchy-restart-terminal`
 - `omarchy-restart-waybar`
 - `omarchy-restart-walker`
 - `omarchy-restart-swayosd`
+- `omarchy-restart-hyprctl`
+- `omarchy-restart-btop`
+- `omarchy-restart-opencode`
+- `omarchy-restart-mako`
+- `omarchy-restart-helix`
 - `omarchy-theme-set-*`
+- `omarchy-plymouth-set-by-theme`
+- `omarchy-plymouth-reset`
 - `omarchy-hook theme-set`
 
 ### Order of operations (simplified)

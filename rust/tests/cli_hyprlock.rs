@@ -383,7 +383,7 @@ fn hyprlock_standalone_command() {
 
     let applied = env.home.join(".config/omarchy/current/theme/hyprlock.conf");
     assert!(applied.exists());
-    assert!(marker.exists());
+    assert!(!marker.exists());
 }
 
 #[test]
