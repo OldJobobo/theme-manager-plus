@@ -24,6 +24,13 @@ pub fn setup_env() -> TestEnv {
     write_stub_ok(&bin.join("notify-send"));
     write_stub_ok(&bin.join("awww"));
     write_stub_ok(&bin.join("awww-daemon"));
+    // Shadow the host's real `omarchy` unified CLI (present on Omarchy
+    // machines via /usr/bin) so it can't silently intercept subcommands
+    // meant to exercise the legacy `omarchy-<group>-<cmd>` fallback. Exit
+    // 127 mimics "no unified command", same as a host with no `omarchy` at
+    // all. Tests that want to exercise the unified path (e.g.
+    // `unlock_set_prefers_unified_omarchy_cli`) overwrite this stub.
+    write_script(&bin.join("omarchy"), "#!/usr/bin/env bash\nexit 127\n");
     TestEnv { temp, home, bin }
 }
 

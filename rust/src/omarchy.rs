@@ -28,6 +28,15 @@ pub fn command_exists(cmd: &str) -> bool {
     which::which(cmd).is_ok()
 }
 
+/// Detects Omarchy 4.0+ ("Quattro"): Waybar/Walker/Mako/swayosd are replaced
+/// by a single Quickshell process ("omarchy-shell") with its own `omarchy
+/// bar`/`omarchy plugin` command groups. Checked by binary presence rather
+/// than parsing `omarchy-version` (which varies wildly: "4.0.0.alpha",
+/// "4.0.0.r1193.g0526ebe-1", "dev (hash)").
+pub fn shell_available() -> bool {
+    command_exists("omarchy-shell") && command_exists("omarchy-bar")
+}
+
 pub fn detect_omarchy_root(config: &ResolvedConfig) -> Option<PathBuf> {
     if let Ok(path) = env::var("OMARCHY_PATH") {
         let trimmed = path.trim();

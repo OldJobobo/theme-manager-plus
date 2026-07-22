@@ -1,8 +1,10 @@
 use anyhow::{anyhow, Result};
 use std::path::{Path, PathBuf};
 
+pub mod bar;
 pub mod cli;
 pub mod config;
+pub mod plugins;
 pub mod git_ops;
 pub mod hyprlock;
 pub mod omarchy;
@@ -18,7 +20,7 @@ pub mod unlock;
 pub mod walker;
 pub mod waybar;
 
-use cli::{Command, PresetCommand, UnlockCommand};
+use cli::{BarCommand, Command, PluginCommand, PresetCommand, UnlockCommand};
 use config::ResolvedConfig;
 use theme_ops::{
     hyprlock_from_defaults, starship_from_defaults, walker_from_defaults, waybar_from_defaults,
@@ -163,6 +165,15 @@ pub fn run(cli: cli::Cli) -> Result<()> {
                         unlock::cmd_unlock_set(&config, &name, quiet)?;
                     }
                 }
+                match selection.bar {
+                    tui::BarSelection::NoChange => {}
+                    tui::BarSelection::Named(id) => {
+                        if !quiet {
+                            output::apply_step("Bar", format!("Applying {id}"));
+                        }
+                        bar::cmd_bar_use(&id, quiet)?;
+                    }
+                }
                 if !quiet {
                     output::apply_done();
                 }
@@ -303,6 +314,52 @@ pub fn run(cli: cli::Cli) -> Result<()> {
             let quiet = args.quiet || config.quiet_default;
             apply_starship_only(&config, starship_mode, quiet, skip_apps, cli.debug_awww)?;
         }
+        Command::Bar(args) => match args.command {
+            BarCommand::List => {
+                bar::cmd_bar_list()?;
+            }
+            BarCommand::Use(use_args) => {
+                let quiet = use_args.quiet || config.quiet_default;
+                bar::cmd_bar_use(&use_args.id, quiet)?;
+            }
+            BarCommand::Reset(reset_args) => {
+                let quiet = reset_args.quiet || config.quiet_default;
+                bar::cmd_bar_reset(quiet)?;
+            }
+            BarCommand::Defaults(defaults_args) => {
+                let quiet = defaults_args.quiet || config.quiet_default;
+                bar::cmd_bar_defaults(quiet)?;
+            }
+            BarCommand::Position(position_args) => {
+                let quiet = position_args.quiet || config.quiet_default;
+                bar::cmd_bar_position(&position_args.position, quiet)?;
+            }
+            BarCommand::Transparent(transparent_args) => {
+                let quiet = transparent_args.quiet || config.quiet_default;
+                bar::cmd_bar_transparent(&transparent_args.value, quiet)?;
+            }
+            BarCommand::Plugin(plugin_args) => match plugin_args.command {
+                cli::BarPluginCommand::Other(args) => {
+                    bar::cmd_bar_plugin_passthrough(&args)?;
+                }
+            },
+        },
+        Command::Plugin(args) => match args.command {
+            PluginCommand::List => {
+                plugins::cmd_plugin_list()?;
+            }
+            PluginCommand::Enable(enable_args) => {
+                let quiet = enable_args.quiet || config.quiet_default;
+                plugins::cmd_plugin_enable(&enable_args.id, quiet)?;
+            }
+            PluginCommand::Disable(disable_args) => {
+                let quiet = disable_args.quiet || config.quiet_default;
+                plugins::cmd_plugin_disable(&disable_args.id, quiet)?;
+            }
+            PluginCommand::Other(args) => {
+                plugins::cmd_plugin_passthrough(&args)?;
+            }
+        },
     }
 
     Ok(())
@@ -331,6 +388,16 @@ fn print_apply_summary(selection: &tui::BrowseSelection) {
     }
     if let Some(value) = unlock_summary(&selection.unlock) {
         output::apply_item("Unlock", value);
+    }
+    if let Some(value) = bar_summary(&selection.bar) {
+        output::apply_item("Bar", value);
+    }
+}
+
+fn bar_summary(selection: &tui::BarSelection) -> Option<String> {
+    match selection {
+        tui::BarSelection::NoChange => None,
+        tui::BarSelection::Named(id) => Some(id.clone()),
     }
 }
 
