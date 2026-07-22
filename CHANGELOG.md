@@ -4,6 +4,17 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Added Omarchy 4.0+ ("Quattro") Quickshell bar support:
+  - Capability-based detection (`omarchy::shell_available()`) instead of parsing `omarchy-version`.
+  - `theme-manager bar list|use|reset|defaults|position|transparent`, wrapping `omarchy bar ...`.
+  - `print-config` reports `OMARCHY_SHELL_AVAILABLE`.
+  - Browse TUI: on 4.0+, the Waybar and Walker tabs are replaced by a single Bar tab (both are superseded by the Quickshell bar/launcher); 3.x installs are unaffected.
+- Added Omarchy 4.0+ Quickshell plugin management:
+  - `theme-manager plugin list|enable|disable`, plus passthrough for `add|update|remove|rescan|clone|edit|validate` straight to `omarchy-plugin` with interactive stdio.
+  - Browse TUI: a Plugins tab (4.0+ only) listing every discovered shell plugin (services, overlays, panels, bar widgets, ...) with live enabled state; Enter toggles enable/disable immediately, independent of the theme-apply pipeline.
+- Added `theme-manager bar plugin add|move|remove|set|replace ...`, a passthrough to `omarchy-bar-plugin` (with interactive stdio) for editing the bar's widget layout (`shell.json`'s `bar.layout.{left,center,right}`).
+- Fixed test isolation: `setup_env()` now shadows the host's real `omarchy` unified CLI with a stub that exits 127, so running the test suite on an actual Omarchy machine no longer lets the live `omarchy` binary silently intercept subcommands meant to exercise the legacy-script fallback (was causing `set_generates_templates_from_colors` and `bg_next_runs_command` to fail).
+
 ## 0.3.6
 
 - Added Omarchy 3.7 unlock theme support:

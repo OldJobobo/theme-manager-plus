@@ -27,9 +27,12 @@ use syntect::parsing::SyntaxSet;
 use syntect::util::as_24_bit_terminal_escaped;
 use tempfile::TempDir;
 
+use crate::bar;
 use crate::config::ResolvedConfig;
 use crate::hyprlock;
+use crate::omarchy;
 use crate::paths::{normalize_theme_name, title_case_theme};
+use crate::plugins;
 use crate::presets;
 use crate::preview;
 use crate::starship;
@@ -53,6 +56,8 @@ enum BrowseTab {
     Theme,
     Waybar,
     Walker,
+    Bar,
+    Plugins,
     Hyprlock,
     Unlock,
     Starship,
@@ -66,6 +71,7 @@ pub struct BrowseSelection {
     pub no_theme_change: bool,
     pub waybar: WaybarSelection,
     pub walker: WalkerSelection,
+    pub bar: BarSelection,
     pub hyprlock: HyprlockSelection,
     pub unlock: UnlockSelection,
     pub starship: StarshipSelection,
@@ -84,6 +90,12 @@ pub enum WalkerSelection {
     NoChange,
     None,
     Auto,
+    Named(String),
+}
+
+#[derive(Debug)]
+pub enum BarSelection {
+    NoChange,
     Named(String),
 }
 
@@ -355,9 +367,9 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
     let backend = PreviewBackend::detect();
     let mut terminal = setup_terminal()?;
     let mut tab = BrowseTab::Theme;
-    let tab_titles = [
-        "Theme", "Waybar", "Walker", "Hyprlock", "Unlock", "Starship", "Review", "Presets",
-    ];
+    let bar_enabled = omarchy::shell_available();
+    let tab_order = build_tab_order(bar_enabled);
+    let tab_titles: Vec<&str> = tab_order.iter().map(|t| tab_label(*t)).collect();
     let mut tab_ranges: Vec<(u16, u16, usize)> = Vec::new();
     let mut active_search_area = Rect::ZERO;
     let mut active_list_inner = Rect::ZERO;
@@ -387,16 +399,30 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
 
     let mut waybar_items = build_waybar_items(config, &theme_path)?;
     let mut walker_items = build_walker_items(config, &theme_path)?;
+    let bar_items = if bar_enabled {
+        build_bar_items()?
+    } else {
+        Vec::new()
+    };
+    let mut plugin_items = if bar_enabled {
+        build_plugin_items().unwrap_or_default()
+    } else {
+        Vec::new()
+    };
     let mut hyprlock_items = build_hyprlock_items(config, &theme_path)?;
     let unlock_items = build_unlock_items(config)?;
     let mut starship_items = build_starship_items(config, &theme_path)?;
     let mut waybar_state = PickerState::new();
     let mut walker_state = PickerState::new();
+    let mut bar_state = PickerState::new();
+    let mut plugin_state = PickerState::new();
     let mut hyprlock_state = PickerState::new();
     let mut unlock_state = PickerState::new();
     let mut starship_state = PickerState::new();
     rebuild_filtered(&mut waybar_state, &waybar_items);
     rebuild_filtered(&mut walker_state, &walker_items);
+    rebuild_filtered(&mut bar_state, &bar_items);
+    rebuild_filtered(&mut plugin_state, &plugin_items);
     rebuild_filtered(&mut hyprlock_state, &hyprlock_items);
     rebuild_filtered(&mut unlock_state, &unlock_items);
     rebuild_filtered(&mut starship_state, &starship_items);
@@ -421,7 +447,7 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
             let content_area = chunks[1];
             status_area = chunks[2];
 
-            render_tab_bar(frame, tab_area, &tab_titles, tab, &mut tab_ranges);
+            render_tab_bar(frame, tab_area, &tab_titles, &tab_order, tab, &mut tab_ranges);
             let status_active =
                 !status_message.is_empty() && status_at.elapsed() < Duration::from_millis(1200);
 
@@ -500,6 +526,54 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                         |_idx| None,
                         true,
                         if status_active && status_tab == BrowseTab::Walker {
+                            Some(status_message.as_str())
+                        } else {
+                            None
+                        },
+                    );
+                    active_search_area = areas.search_area;
+                    active_list_inner = areas.list_inner;
+                    active_code_inner = areas.code_inner;
+                    active_code_area = areas.code_area;
+                }
+                BrowseTab::Bar => {
+                    let areas = render_picker(
+                        frame,
+                        content_area,
+                        "Select Bar",
+                        "Bar Info",
+                        &bar_items,
+                        &mut bar_state,
+                        &backend,
+                        |idx| build_bar_code_preview(&bar_items[idx]),
+                        |_idx| None,
+                        |_idx| None,
+                        false,
+                        if status_active && status_tab == BrowseTab::Bar {
+                            Some(status_message.as_str())
+                        } else {
+                            None
+                        },
+                    );
+                    active_search_area = areas.search_area;
+                    active_list_inner = areas.list_inner;
+                    active_code_inner = areas.code_inner;
+                    active_code_area = areas.code_area;
+                }
+                BrowseTab::Plugins => {
+                    let areas = render_picker(
+                        frame,
+                        content_area,
+                        "Shell Plugins",
+                        "Plugin Info",
+                        &plugin_items,
+                        &mut plugin_state,
+                        &backend,
+                        |idx| build_plugin_code_preview(&plugin_items[idx]),
+                        |_idx| None,
+                        |_idx| None,
+                        false,
+                        if status_active && status_tab == BrowseTab::Plugins {
                             Some(status_message.as_str())
                         } else {
                             None
@@ -615,12 +689,22 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                     active_list_inner = Rect::ZERO;
                     active_code_inner = Rect::ZERO;
                     active_code_area = Rect::ZERO;
+                    let (waybar_row, walker_row, bar_row) = bar_or_waybar_labels(
+                        bar_enabled,
+                        &bar_items,
+                        &bar_state,
+                        &waybar_items,
+                        &waybar_state,
+                        &walker_items,
+                        &walker_state,
+                    );
                     render_review(
                         frame,
                         content_area,
                         &selected_theme,
-                        current_waybar_label(&waybar_items, &waybar_state),
-                        current_walker_label(&walker_items, &walker_state),
+                        waybar_row,
+                        walker_row,
+                        bar_row,
                         current_hyprlock_label(&hyprlock_items, &hyprlock_state),
                         current_unlock_label(&unlock_items, &unlock_state),
                         current_starship_label(&starship_items, &starship_state),
@@ -628,13 +712,23 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                 }
             }
 
+            let (waybar_row, walker_row, bar_row) = bar_or_waybar_labels(
+                bar_enabled,
+                &bar_items,
+                &bar_state,
+                &waybar_items,
+                &waybar_state,
+                &walker_items,
+                &walker_state,
+            );
             render_status_bar(
                 frame,
                 status_area,
                 tab,
                 &theme_label_for_display(&selected_theme),
-                current_waybar_label(&waybar_items, &waybar_state),
-                current_walker_label(&walker_items, &walker_state),
+                waybar_row,
+                walker_row,
+                bar_row,
                 current_hyprlock_label(&hyprlock_items, &hyprlock_state),
                 current_unlock_label(&unlock_items, &unlock_state),
                 current_starship_label(&starship_items, &starship_state),
@@ -788,6 +882,8 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                             &mut theme_state,
                             &mut waybar_state,
                             &mut walker_state,
+                            &mut bar_state,
+                            &mut plugin_state,
                             &mut hyprlock_state,
                             &mut unlock_state,
                             &mut starship_state,
@@ -822,6 +918,8 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                                         &mut theme_state,
                                         &mut waybar_state,
                                         &mut walker_state,
+                                        &mut bar_state,
+                                        &mut plugin_state,
                                         &mut hyprlock_state,
                                         &mut unlock_state,
                                         &mut starship_state,
@@ -829,6 +927,8 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                                         &theme_items,
                                         &waybar_items,
                                         &walker_items,
+                                        &bar_items,
+                                        &plugin_items,
                                         &hyprlock_items,
                                         &unlock_items,
                                         &starship_items,
@@ -852,17 +952,21 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                                 &mut theme_state,
                                 &mut waybar_state,
                                 &mut walker_state,
+                                &mut bar_state,
+                                &mut plugin_state,
                                 &mut hyprlock_state,
                                 &mut unlock_state,
                                 &mut starship_state,
                                 &mut preset_state,
                             );
-                            tab = next_tab(tab);
+                            tab = next_tab(&tab_order, tab);
                             clear_kitty_preview(&backend);
                             mark_force_clear(
                                 &mut theme_state,
                                 &mut waybar_state,
                                 &mut walker_state,
+                                &mut bar_state,
+                                &mut plugin_state,
                                 &mut hyprlock_state,
                                 &mut unlock_state,
                                 &mut starship_state,
@@ -880,17 +984,21 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                                 &mut theme_state,
                                 &mut waybar_state,
                                 &mut walker_state,
+                                &mut bar_state,
+                                &mut plugin_state,
                                 &mut hyprlock_state,
                                 &mut unlock_state,
                                 &mut starship_state,
                                 &mut preset_state,
                             );
-                            tab = previous_tab(tab);
+                            tab = previous_tab(&tab_order, tab);
                             clear_kitty_preview(&backend);
                             mark_force_clear(
                                 &mut theme_state,
                                 &mut waybar_state,
                                 &mut walker_state,
+                                &mut bar_state,
+                                &mut plugin_state,
                                 &mut hyprlock_state,
                                 &mut unlock_state,
                                 &mut starship_state,
@@ -924,6 +1032,7 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                                 no_theme_change: selected_theme == NO_THEME_CHANGE_VALUE,
                                 waybar: current_waybar_selection(&waybar_items, &waybar_state),
                                 walker: current_walker_selection(&walker_items, &walker_state),
+                                bar: current_bar_selection(&bar_items, &bar_state),
                                 hyprlock: current_hyprlock_selection(
                                     &hyprlock_items,
                                     &hyprlock_state,
@@ -966,6 +1075,8 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                                         &mut theme_state,
                                         &mut waybar_state,
                                         &mut walker_state,
+                                        &mut bar_state,
+                                        &mut plugin_state,
                                         &mut hyprlock_state,
                                         &mut unlock_state,
                                         &mut starship_state,
@@ -977,6 +1088,8 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                                         &mut theme_state,
                                         &mut waybar_state,
                                         &mut walker_state,
+                                        &mut bar_state,
+                                        &mut plugin_state,
                                         &mut hyprlock_state,
                                         &mut unlock_state,
                                         &mut starship_state,
@@ -992,6 +1105,36 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                             }
                             continue 'event_loop;
                         }
+                        if key.code == KeyCode::Enter && tab == BrowseTab::Plugins {
+                            status_tab = tab;
+                            status_at = Instant::now();
+                            if let Some(index) =
+                                selected_item_index(&plugin_state, plugin_items.len())
+                            {
+                                let item = plugin_items[index].clone();
+                                let result = if item.kind == "enabled" {
+                                    plugins::cmd_plugin_disable(&item.value, true)
+                                } else {
+                                    plugins::cmd_plugin_enable(&item.value, true)
+                                };
+                                match result {
+                                    Ok(()) => {
+                                        plugin_items = build_plugin_items().unwrap_or_default();
+                                        rebuild_filtered(&mut plugin_state, &plugin_items);
+                                        status_message = format!("{} toggled", item.label.trim());
+                                    }
+                                    Err(err) => {
+                                        status_message = err.to_string();
+                                    }
+                                }
+                            } else {
+                                status_message = "No plugins found".to_string();
+                            }
+                            if !event::poll(Duration::from_millis(0))? {
+                                break 'event_loop;
+                            }
+                            continue 'event_loop;
+                        }
                         if key.code == KeyCode::Enter && tab != BrowseTab::Review {
                             status_tab = tab;
                             status_at = Instant::now();
@@ -999,6 +1142,8 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                                 BrowseTab::Theme => "Theme selected".to_string(),
                                 BrowseTab::Waybar => "Waybar selected".to_string(),
                                 BrowseTab::Walker => "Walker selected".to_string(),
+                                BrowseTab::Bar => "Bar selected".to_string(),
+                                BrowseTab::Plugins => "Plugins selected".to_string(),
                                 BrowseTab::Hyprlock => "Hyprlock selected".to_string(),
                                 BrowseTab::Unlock => "Unlock selected".to_string(),
                                 BrowseTab::Starship => "Starship selected".to_string(),
@@ -1011,18 +1156,22 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                                 &mut theme_state,
                                 &mut waybar_state,
                                 &mut walker_state,
+                                &mut bar_state,
+                                &mut plugin_state,
                                 &mut hyprlock_state,
                                 &mut unlock_state,
                                 &mut starship_state,
                                 &mut preset_state,
                             );
-                            tab = next_tab(tab);
+                            tab = next_tab(&tab_order, tab);
                             if tab == BrowseTab::Review {
                                 clear_kitty_preview(&backend);
                                 mark_force_clear(
                                     &mut theme_state,
                                     &mut waybar_state,
                                     &mut walker_state,
+                                    &mut bar_state,
+                                    &mut plugin_state,
                                     &mut hyprlock_state,
                                     &mut unlock_state,
                                     &mut starship_state,
@@ -1033,6 +1182,8 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                                 BrowseTab::Theme => theme_state.filtered_indices.len(),
                                 BrowseTab::Waybar => waybar_state.filtered_indices.len(),
                                 BrowseTab::Walker => walker_state.filtered_indices.len(),
+                                BrowseTab::Bar => bar_state.filtered_indices.len(),
+                                BrowseTab::Plugins => plugin_state.filtered_indices.len(),
                                 BrowseTab::Hyprlock => hyprlock_state.filtered_indices.len(),
                                 BrowseTab::Unlock => unlock_state.filtered_indices.len(),
                                 BrowseTab::Starship => starship_state.filtered_indices.len(),
@@ -1044,6 +1195,8 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                                 &mut theme_state,
                                 &mut waybar_state,
                                 &mut walker_state,
+                                &mut bar_state,
+                                &mut plugin_state,
                                 &mut hyprlock_state,
                                 &mut unlock_state,
                                 &mut starship_state,
@@ -1066,6 +1219,8 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                             BrowseTab::Theme => theme_state.filtered_indices.len(),
                             BrowseTab::Waybar => waybar_state.filtered_indices.len(),
                             BrowseTab::Walker => walker_state.filtered_indices.len(),
+                            BrowseTab::Bar => bar_state.filtered_indices.len(),
+                            BrowseTab::Plugins => plugin_state.filtered_indices.len(),
                             BrowseTab::Hyprlock => hyprlock_state.filtered_indices.len(),
                             BrowseTab::Unlock => unlock_state.filtered_indices.len(),
                             BrowseTab::Starship => starship_state.filtered_indices.len(),
@@ -1077,6 +1232,8 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                             &mut theme_state,
                             &mut waybar_state,
                             &mut walker_state,
+                            &mut bar_state,
+                            &mut plugin_state,
                             &mut hyprlock_state,
                             &mut unlock_state,
                             &mut starship_state,
@@ -1148,17 +1305,21 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                                         &mut theme_state,
                                         &mut waybar_state,
                                         &mut walker_state,
+                                        &mut bar_state,
+                                        &mut plugin_state,
                                         &mut hyprlock_state,
                                         &mut unlock_state,
                                         &mut starship_state,
                                         &mut preset_state,
                                     );
-                                    tab = tab_from_index(index);
+                                    tab = tab_from_index(&tab_order, index);
                                     clear_kitty_preview(&backend);
                                     mark_force_clear(
                                         &mut theme_state,
                                         &mut waybar_state,
                                         &mut walker_state,
+                                        &mut bar_state,
+                                        &mut plugin_state,
                                         &mut hyprlock_state,
                                         &mut unlock_state,
                                         &mut starship_state,
@@ -1175,6 +1336,8 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                                 BrowseTab::Theme => theme_state.filtered_indices.len(),
                                 BrowseTab::Waybar => waybar_state.filtered_indices.len(),
                                 BrowseTab::Walker => walker_state.filtered_indices.len(),
+                                BrowseTab::Bar => bar_state.filtered_indices.len(),
+                                BrowseTab::Plugins => plugin_state.filtered_indices.len(),
                                 BrowseTab::Hyprlock => hyprlock_state.filtered_indices.len(),
                                 BrowseTab::Unlock => unlock_state.filtered_indices.len(),
                                 BrowseTab::Starship => starship_state.filtered_indices.len(),
@@ -1186,6 +1349,8 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                                 &mut theme_state,
                                 &mut waybar_state,
                                 &mut walker_state,
+                                &mut bar_state,
+                                &mut plugin_state,
                                 &mut hyprlock_state,
                                 &mut unlock_state,
                                 &mut starship_state,
@@ -1215,6 +1380,8 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                                 BrowseTab::Theme => theme_state.filtered_indices.len(),
                                 BrowseTab::Waybar => waybar_state.filtered_indices.len(),
                                 BrowseTab::Walker => walker_state.filtered_indices.len(),
+                                BrowseTab::Bar => bar_state.filtered_indices.len(),
+                                BrowseTab::Plugins => plugin_state.filtered_indices.len(),
                                 BrowseTab::Hyprlock => hyprlock_state.filtered_indices.len(),
                                 BrowseTab::Unlock => unlock_state.filtered_indices.len(),
                                 BrowseTab::Starship => starship_state.filtered_indices.len(),
@@ -1226,6 +1393,8 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                                 &mut theme_state,
                                 &mut waybar_state,
                                 &mut walker_state,
+                                &mut bar_state,
+                                &mut plugin_state,
                                 &mut hyprlock_state,
                                 &mut unlock_state,
                                 &mut starship_state,
@@ -1251,6 +1420,8 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                                 BrowseTab::Theme => theme_state.filtered_indices.len(),
                                 BrowseTab::Waybar => waybar_state.filtered_indices.len(),
                                 BrowseTab::Walker => walker_state.filtered_indices.len(),
+                                BrowseTab::Bar => bar_state.filtered_indices.len(),
+                                BrowseTab::Plugins => plugin_state.filtered_indices.len(),
                                 BrowseTab::Hyprlock => hyprlock_state.filtered_indices.len(),
                                 BrowseTab::Unlock => unlock_state.filtered_indices.len(),
                                 BrowseTab::Starship => starship_state.filtered_indices.len(),
@@ -1262,6 +1433,8 @@ pub fn browse(config: &ResolvedConfig, quiet: bool) -> Result<Option<BrowseSelec
                                 &mut theme_state,
                                 &mut waybar_state,
                                 &mut walker_state,
+                                &mut bar_state,
+                                &mut plugin_state,
                                 &mut hyprlock_state,
                                 &mut unlock_state,
                                 &mut starship_state,
@@ -1388,6 +1561,49 @@ struct LabeledItem {
 struct PresetItem {
     label: String,
     name: String,
+}
+
+/// Bar options (Omarchy 4.0+ only): the built-in Quickshell bar plus any
+/// installed third-party bar plugins. Not theme-scoped, so this only needs
+/// to be built once per session (unlike Waybar/Walker/Hyprlock/Starship).
+fn build_bar_items() -> Result<Vec<LabeledItem>> {
+    let mut items = Vec::new();
+    items.push(OptionItem::with_kind(
+        "No Bar change".to_string(),
+        "none".to_string(),
+        "none",
+        None,
+    ));
+
+    for option in bar::list_bar_options()? {
+        let label = if option.id == "omarchy.bar" {
+            format!("{} (Default)", option.name)
+        } else {
+            option.name.clone()
+        };
+        items.push(OptionItem::with_kind(label, option.id, "named", None));
+    }
+
+    Ok(items)
+}
+
+/// Every discovered shell plugin (Omarchy 4.0+ only), with live enabled
+/// state. `kind` carries "enabled"/"disabled" so the Plugins tab can toggle
+/// on Enter without a round-trip lookup.
+fn build_plugin_items() -> Result<Vec<LabeledItem>> {
+    let mut items = Vec::new();
+    for plugin in plugins::list_plugins()? {
+        let name = if plugin.name.is_empty() {
+            plugin.id.clone()
+        } else {
+            plugin.name.clone()
+        };
+        let marker = if plugin.enabled { "●" } else { "○" };
+        let label = format!("{marker} {name} ({})", plugin.kinds.join(","));
+        let kind = if plugin.enabled { "enabled" } else { "disabled" };
+        items.push(OptionItem::with_kind(label, plugin.id, kind, None));
+    }
+    Ok(items)
 }
 
 fn build_waybar_items(config: &ResolvedConfig, theme_path: &Path) -> Result<Vec<LabeledItem>> {
@@ -1683,6 +1899,35 @@ fn build_waybar_code_preview(
             load_multi_code_preview(&parts)
         }
     }
+}
+
+fn build_bar_code_preview(item: &LabeledItem) -> Text<'static> {
+    match item.kind.as_str() {
+        "none" => Text::from("No Bar change."),
+        _ => Text::from(vec![
+            Line::from(format!("Bar: {}", item.label)),
+            Line::from(format!("Plugin id: {}", item.value)),
+            Line::from(""),
+            Line::from("Applied immediately via `omarchy bar use`,"),
+            Line::from("independent of the selected theme."),
+        ]),
+    }
+}
+
+fn build_plugin_code_preview(item: &LabeledItem) -> Text<'static> {
+    let state = if item.kind == "enabled" {
+        "Enabled"
+    } else {
+        "Disabled"
+    };
+    Text::from(vec![
+        Line::from(item.label.clone()),
+        Line::from(format!("id: {}", item.value)),
+        Line::from(format!("State: {state}")),
+        Line::from(""),
+        Line::from("Enter: toggle enable/disable (applied immediately,"),
+        Line::from("independent of the selected theme)."),
+    ])
 }
 
 fn build_starship_code_preview(
@@ -2326,22 +2571,33 @@ fn render_preset_picker(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_review(
     frame: &mut Frame,
     area: Rect,
     selected_theme: &str,
-    waybar_label: String,
-    walker_label: String,
+    waybar_label: Option<String>,
+    walker_label: Option<String>,
+    bar_label: Option<String>,
     hyprlock_label: String,
     unlock_label: String,
     starship_label: String,
 ) {
-    let lines = vec![
+    let mut lines = vec![
         Line::from("=== Review Selections ==="),
         Line::from(""),
         Line::from(format!("Theme: {}", title_case_theme(selected_theme))),
-        Line::from(format!("Waybar: {}", waybar_label)),
-        Line::from(format!("Walker: {}", walker_label)),
+    ];
+    if let Some(waybar_label) = waybar_label {
+        lines.push(Line::from(format!("Waybar: {}", waybar_label)));
+    }
+    if let Some(walker_label) = walker_label {
+        lines.push(Line::from(format!("Walker: {}", walker_label)));
+    }
+    if let Some(bar_label) = bar_label {
+        lines.push(Line::from(format!("Bar: {}", bar_label)));
+    }
+    lines.extend([
         Line::from(format!("Hyprlock: {}", hyprlock_label)),
         Line::from(format!("Unlock: {}", unlock_label)),
         Line::from(format!("Starship: {}", starship_label)),
@@ -2349,20 +2605,22 @@ fn render_review(
         Line::from("Apply: Ctrl+Enter"),
         Line::from("Cancel: Esc"),
         Line::from("Switch tabs: Tab / Shift+Tab (or click tab bar)"),
-    ];
+    ]);
     let review = Paragraph::new(Text::from(lines))
         .block(Block::default().title("Review").borders(Borders::ALL))
         .wrap(Wrap { trim: false });
     frame.render_widget(review, area);
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_status_bar(
     frame: &mut Frame,
     area: Rect,
     tab: BrowseTab,
     theme: &str,
-    waybar: String,
-    walker: String,
+    waybar: Option<String>,
+    walker: Option<String>,
+    bar: Option<String>,
     hyprlock: String,
     unlock: String,
     starship: String,
@@ -2372,16 +2630,7 @@ fn render_status_bar(
 ) {
     let mut spans = Vec::new();
     let mut segments: Vec<(String, Color, Color)> = Vec::new();
-    let tab_label = match tab {
-        BrowseTab::Theme => "Theme",
-        BrowseTab::Waybar => "Waybar",
-        BrowseTab::Walker => "Walker",
-        BrowseTab::Hyprlock => "Hyprlock",
-        BrowseTab::Unlock => "Unlock",
-        BrowseTab::Starship => "Starship",
-        BrowseTab::Presets => "Presets",
-        BrowseTab::Review => "Review",
-    };
+    let tab_label = tab_label(tab);
 
     segments.push((tab_label.to_string(), Color::Black, Color::Yellow));
     segments.push((
@@ -2389,8 +2638,15 @@ fn render_status_bar(
         Color::Black,
         Color::Cyan,
     ));
-    segments.push((format!("Waybar: {waybar}"), Color::Black, Color::Green));
-    segments.push((format!("Walker: {walker}"), Color::Black, Color::Blue));
+    if let Some(waybar) = waybar {
+        segments.push((format!("Waybar: {waybar}"), Color::Black, Color::Green));
+    }
+    if let Some(walker) = walker {
+        segments.push((format!("Walker: {walker}"), Color::Black, Color::Blue));
+    }
+    if let Some(bar) = bar {
+        segments.push((format!("Bar: {bar}"), Color::Black, Color::Green));
+    }
     segments.push((
         format!("Hyprlock: {hyprlock}"),
         Color::Black,
@@ -2488,6 +2744,7 @@ fn render_tab_bar(
     frame: &mut Frame,
     area: Rect,
     titles: &[&str],
+    order: &[BrowseTab],
     active: BrowseTab,
     ranges: &mut Vec<(u16, u16, usize)>,
 ) {
@@ -2498,7 +2755,7 @@ fn render_tab_bar(
 
     let mut spans = Vec::new();
     let mut cursor = inner.x;
-    let active_index = tab_index(active);
+    let active_index = tab_index(order, active);
 
     for (idx, title) in titles.iter().enumerate() {
         let label = format!(" {} ", title);
@@ -2592,28 +2849,34 @@ fn clear_picker_preview(backend: &PreviewBackend, state: &mut PickerState) {
     state.force_clear = true;
 }
 
+#[allow(clippy::too_many_arguments)]
 fn clear_active_preview(
     backend: &PreviewBackend,
     tab: BrowseTab,
     theme: &mut PickerState,
     waybar: &mut PickerState,
     walker: &mut PickerState,
+    bar: &mut PickerState,
+    plugin: &mut PickerState,
     hyprlock: &mut PickerState,
     unlock: &mut PickerState,
     starship: &mut PickerState,
     presets: &mut PickerState,
 ) {
     if let Some(state) = active_picker_mut(
-        tab, theme, waybar, walker, hyprlock, unlock, starship, presets,
+        tab, theme, waybar, walker, bar, plugin, hyprlock, unlock, starship, presets,
     ) {
         clear_picker_preview(backend, state);
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn mark_force_clear(
     theme: &mut PickerState,
     waybar: &mut PickerState,
     walker: &mut PickerState,
+    bar: &mut PickerState,
+    plugin: &mut PickerState,
     hyprlock: &mut PickerState,
     unlock: &mut PickerState,
     starship: &mut PickerState,
@@ -2622,17 +2885,22 @@ fn mark_force_clear(
     theme.force_clear = true;
     waybar.force_clear = true;
     walker.force_clear = true;
+    bar.force_clear = true;
+    plugin.force_clear = true;
     hyprlock.force_clear = true;
     unlock.force_clear = true;
     starship.force_clear = true;
     presets.force_clear = true;
 }
 
+#[allow(clippy::too_many_arguments)]
 fn active_picker_mut<'a>(
     tab: BrowseTab,
     theme: &'a mut PickerState,
     waybar: &'a mut PickerState,
     walker: &'a mut PickerState,
+    bar: &'a mut PickerState,
+    plugin: &'a mut PickerState,
     hyprlock: &'a mut PickerState,
     unlock: &'a mut PickerState,
     starship: &'a mut PickerState,
@@ -2642,6 +2910,8 @@ fn active_picker_mut<'a>(
         BrowseTab::Theme => Some(theme),
         BrowseTab::Waybar => Some(waybar),
         BrowseTab::Walker => Some(walker),
+        BrowseTab::Bar => Some(bar),
+        BrowseTab::Plugins => Some(plugin),
         BrowseTab::Hyprlock => Some(hyprlock),
         BrowseTab::Unlock => Some(unlock),
         BrowseTab::Starship => Some(starship),
@@ -2650,11 +2920,14 @@ fn active_picker_mut<'a>(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn rebuild_active_filtered(
     tab: BrowseTab,
     theme: &mut PickerState,
     waybar: &mut PickerState,
     walker: &mut PickerState,
+    bar: &mut PickerState,
+    plugin: &mut PickerState,
     hyprlock: &mut PickerState,
     unlock: &mut PickerState,
     starship: &mut PickerState,
@@ -2662,6 +2935,8 @@ fn rebuild_active_filtered(
     theme_items: &[OptionItem],
     waybar_items: &[LabeledItem],
     walker_items: &[LabeledItem],
+    bar_items: &[LabeledItem],
+    plugin_items: &[LabeledItem],
     hyprlock_items: &[LabeledItem],
     unlock_items: &[LabeledItem],
     starship_items: &[LabeledItem],
@@ -2671,6 +2946,8 @@ fn rebuild_active_filtered(
         BrowseTab::Theme => rebuild_filtered(theme, theme_items),
         BrowseTab::Waybar => rebuild_filtered(waybar, waybar_items),
         BrowseTab::Walker => rebuild_filtered(walker, walker_items),
+        BrowseTab::Bar => rebuild_filtered(bar, bar_items),
+        BrowseTab::Plugins => rebuild_filtered(plugin, plugin_items),
         BrowseTab::Hyprlock => rebuild_filtered(hyprlock, hyprlock_items),
         BrowseTab::Unlock => rebuild_filtered(unlock, unlock_items),
         BrowseTab::Starship => rebuild_filtered(starship, starship_items),
@@ -2679,38 +2956,87 @@ fn rebuild_active_filtered(
     }
 }
 
-fn tab_index(tab: BrowseTab) -> usize {
+/// Tabs shown, in cycling/display order. Omarchy 4.0+ ("Quattro") replaces
+/// Waybar/Walker with a single Quickshell bar and its plugin system, so those
+/// two tabs are swapped for Bar + Plugins; everything else is unaffected.
+fn build_tab_order(bar_enabled: bool) -> Vec<BrowseTab> {
+    if bar_enabled {
+        vec![
+            BrowseTab::Theme,
+            BrowseTab::Bar,
+            BrowseTab::Plugins,
+            BrowseTab::Hyprlock,
+            BrowseTab::Unlock,
+            BrowseTab::Starship,
+            BrowseTab::Review,
+            BrowseTab::Presets,
+        ]
+    } else {
+        vec![
+            BrowseTab::Theme,
+            BrowseTab::Waybar,
+            BrowseTab::Walker,
+            BrowseTab::Hyprlock,
+            BrowseTab::Unlock,
+            BrowseTab::Starship,
+            BrowseTab::Review,
+            BrowseTab::Presets,
+        ]
+    }
+}
+
+fn tab_label(tab: BrowseTab) -> &'static str {
     match tab {
-        BrowseTab::Theme => 0,
-        BrowseTab::Waybar => 1,
-        BrowseTab::Walker => 2,
-        BrowseTab::Hyprlock => 3,
-        BrowseTab::Unlock => 4,
-        BrowseTab::Starship => 5,
-        BrowseTab::Review => 6,
-        BrowseTab::Presets => 7,
+        BrowseTab::Theme => "Theme",
+        BrowseTab::Waybar => "Waybar",
+        BrowseTab::Walker => "Walker",
+        BrowseTab::Bar => "Bar",
+        BrowseTab::Plugins => "Plugins",
+        BrowseTab::Hyprlock => "Hyprlock",
+        BrowseTab::Unlock => "Unlock",
+        BrowseTab::Starship => "Starship",
+        BrowseTab::Presets => "Presets",
+        BrowseTab::Review => "Review",
     }
 }
 
-fn tab_from_index(index: usize) -> BrowseTab {
-    match index {
-        0 => BrowseTab::Theme,
-        1 => BrowseTab::Waybar,
-        2 => BrowseTab::Walker,
-        3 => BrowseTab::Hyprlock,
-        4 => BrowseTab::Unlock,
-        5 => BrowseTab::Starship,
-        6 => BrowseTab::Review,
-        _ => BrowseTab::Presets,
+fn tab_index(order: &[BrowseTab], tab: BrowseTab) -> usize {
+    order.iter().position(|&t| t == tab).unwrap_or(0)
+}
+
+fn tab_from_index(order: &[BrowseTab], index: usize) -> BrowseTab {
+    order[index % order.len()]
+}
+
+fn next_tab(order: &[BrowseTab], tab: BrowseTab) -> BrowseTab {
+    tab_from_index(order, tab_index(order, tab) + 1)
+}
+
+fn previous_tab(order: &[BrowseTab], tab: BrowseTab) -> BrowseTab {
+    tab_from_index(order, tab_index(order, tab) + order.len() - 1)
+}
+
+/// Picks between the Waybar/Walker labels (3.x) and a single Bar label (4.0+)
+/// for the review/status-bar rows, since only one pair is ever meaningful.
+#[allow(clippy::too_many_arguments)]
+fn bar_or_waybar_labels(
+    bar_enabled: bool,
+    bar_items: &[LabeledItem],
+    bar_state: &PickerState,
+    waybar_items: &[LabeledItem],
+    waybar_state: &PickerState,
+    walker_items: &[LabeledItem],
+    walker_state: &PickerState,
+) -> (Option<String>, Option<String>, Option<String>) {
+    if bar_enabled {
+        (None, None, Some(current_bar_label(bar_items, bar_state)))
+    } else {
+        (
+            Some(current_waybar_label(waybar_items, waybar_state)),
+            Some(current_walker_label(walker_items, walker_state)),
+            None,
+        )
     }
-}
-
-fn next_tab(tab: BrowseTab) -> BrowseTab {
-    tab_from_index((tab_index(tab) + 1) % 8)
-}
-
-fn previous_tab(tab: BrowseTab) -> BrowseTab {
-    tab_from_index((tab_index(tab) + 7) % 8)
 }
 
 fn tab_index_from_click(ranges: &[(u16, u16, usize)], column: u16) -> Option<usize> {
@@ -2975,6 +3301,29 @@ fn current_waybar_label(items: &[LabeledItem], state: &PickerState) -> String {
         "theme" => "Theme waybar".to_string(),
         "none" => "None".to_string(),
         _ => item.label.clone(),
+    }
+}
+
+fn current_bar_label(items: &[LabeledItem], state: &PickerState) -> String {
+    let index = match selected_item_index(state, items.len()) {
+        Some(index) => index,
+        None => return "No options".to_string(),
+    };
+    let item = &items[index];
+    match item.kind.as_str() {
+        "none" => "No change".to_string(),
+        _ => item.label.clone(),
+    }
+}
+
+fn current_bar_selection(items: &[LabeledItem], state: &PickerState) -> BarSelection {
+    let index = match selected_item_index(state, items.len()) {
+        Some(index) => index,
+        None => return BarSelection::NoChange,
+    };
+    match items[index].kind.as_str() {
+        "none" => BarSelection::NoChange,
+        _ => BarSelection::Named(items[index].value.clone()),
     }
 }
 

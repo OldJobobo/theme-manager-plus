@@ -521,6 +521,14 @@ pub fn print_config(config: &ResolvedConfig) {
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_default()
     );
+    println!(
+        "OMARCHY_SHELL_AVAILABLE={}",
+        if crate::omarchy::shell_available() {
+            "1"
+        } else {
+            ""
+        }
+    );
     println!("WAYBAR_DIR={}", config.waybar_dir.to_string_lossy());
     println!(
         "WAYBAR_THEMES_DIR={}",

@@ -36,6 +36,8 @@ pub enum Command {
     Hyprlock(HyprlockArgs),
     Unlock(UnlockArgs),
     Starship(StarshipArgs),
+    Bar(BarArgs),
+    Plugin(PluginArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -179,6 +181,105 @@ pub struct UnlockResetArgs {
 #[derive(Parser, Debug)]
 pub struct StarshipArgs {
     pub mode: String,
+    #[arg(short = 'q', long = "quiet")]
+    pub quiet: bool,
+}
+
+#[derive(Parser, Debug)]
+#[command(
+    about = "Manage the Omarchy 4.0+ Quickshell bar (requires omarchy-shell)"
+)]
+pub struct BarArgs {
+    #[command(subcommand)]
+    pub command: BarCommand,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum BarCommand {
+    /// List installed bar options (built-in and third-party)
+    List,
+    /// Switch the active bar to the given plugin id
+    Use(BarUseArgs),
+    /// Return to the built-in Omarchy bar
+    Reset(BarQuietArgs),
+    /// Restore the default bar layout and service widgets
+    Defaults(BarQuietArgs),
+    /// Set the bar position
+    Position(BarPositionArgs),
+    /// Set bar transparency
+    Transparent(BarTransparentArgs),
+    /// Add, move, remove, set, or replace bar widgets in the layout
+    /// (passed straight through to `omarchy-bar-plugin` with interactive stdio)
+    Plugin(BarPluginArgs),
+}
+
+#[derive(Parser, Debug)]
+pub struct BarPluginArgs {
+    #[command(subcommand)]
+    pub command: BarPluginCommand,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum BarPluginCommand {
+    /// Anything (add/move/remove/set/replace) is passed straight through
+    /// to `omarchy-bar-plugin` with interactive stdio
+    #[command(external_subcommand)]
+    Other(Vec<String>),
+}
+
+#[derive(Parser, Debug)]
+pub struct BarUseArgs {
+    pub id: String,
+    #[arg(short = 'q', long = "quiet")]
+    pub quiet: bool,
+}
+
+#[derive(Parser, Debug)]
+pub struct BarQuietArgs {
+    #[arg(short = 'q', long = "quiet")]
+    pub quiet: bool,
+}
+
+#[derive(Parser, Debug)]
+pub struct BarPositionArgs {
+    #[arg(value_name = "top|bottom|left|right")]
+    pub position: String,
+    #[arg(short = 'q', long = "quiet")]
+    pub quiet: bool,
+}
+
+#[derive(Parser, Debug)]
+pub struct BarTransparentArgs {
+    #[arg(value_name = "true|false")]
+    pub value: String,
+    #[arg(short = 'q', long = "quiet")]
+    pub quiet: bool,
+}
+
+#[derive(Parser, Debug)]
+#[command(about = "Manage Omarchy 4.0+ Quickshell plugins (requires omarchy-shell)")]
+pub struct PluginArgs {
+    #[command(subcommand)]
+    pub command: PluginCommand,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum PluginCommand {
+    /// List discovered shell plugins
+    List,
+    /// Enable a plugin by id
+    Enable(PluginIdArgs),
+    /// Disable a plugin by id
+    Disable(PluginIdArgs),
+    /// Anything else (add/update/remove/rescan/clone/edit/validate) is passed
+    /// straight through to `omarchy-plugin` with interactive stdio
+    #[command(external_subcommand)]
+    Other(Vec<String>),
+}
+
+#[derive(Parser, Debug)]
+pub struct PluginIdArgs {
+    pub id: String,
     #[arg(short = 'q', long = "quiet")]
     pub quiet: bool,
 }
